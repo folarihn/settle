@@ -12,7 +12,7 @@ Status: accepted (Phase 1), 2026-11-02. Contract: `contracts/escrow` (near-sdk 5
 
 4. **Submissions are numbered by the contract.** `submit` returns a sequence number (1, 2, ...). A verification report must cite that number, the artifact hash and the plan hash. A report written for an earlier submission therefore cannot pay a later one. The last report nonce is also stored, so the same report cannot be applied twice to an inconclusive run.
 
-5. **The verifier is trusted by account, not yet by signature.** `record_verification` accepts reports only from the `verifier` account fixed in the terms. Verifying an ed25519 report signature onchain is deferred to Phase 2, when the verifier service and its key exist. Until then the contract does not claim trustless verification. A dishonest verifier could report PASS, but the client still has the challenge window to dispute it with the resolver.
+5. **Reports are authenticated by the verifier's ed25519 signature** (updated in Phase 2, see ADR 0002). The terms fix a raw `verifier_public_key`, and `record_verification` checks the signature with `env::ed25519_verify` over `borsh((REPORT_SIGNING_TAG, contract_account_id, report))`. Anyone may relay a report, so the verifier needs no NEAR key and the relay cannot change a result. A dishonest verifier could still sign a false PASS, but the client then has the challenge window to dispute it with the resolver. The `verifier` account remains only as a party that may finalize a challenge window.
 
 6. **Fail closed.** `FAIL` returns the milestone to Pending. `INCONCLUSIVE` and `RUNNER_ERROR` leave it Submitted. None of them allocates funds.
 
@@ -28,4 +28,3 @@ Status: accepted (Phase 1), 2026-11-02. Contract: `contracts/escrow` (near-sdk 5
 
 - Testnet deployment and a reproducible wasm build (`cargo near build`), which need a funded testnet account.
 - Integration tests against a sandbox node (near-workspaces).
-- Onchain verifier signature checks (Phase 2).

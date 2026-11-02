@@ -4,9 +4,13 @@ import { AgreementEvent } from "./events.js";
 import type { NearAccountId } from "./identity.js";
 import { fromYocto, toYocto, type Yocto } from "./money.js";
 import type { AgreementState, MilestoneState, MilestoneStatus } from "./state.js";
+import { verifyReportSignature } from "./signing.js";
 import { computePlanHash, computeTermsHash, parseTerms, type AgreementTerms, type MilestoneTerms } from "./terms.js";
 
 type Role = "client" | "worker" | "verifier" | "resolver";
+
+/** Same cap as the escrow contract, which prepays storage for a bounded number of submissions. */
+export const MAX_SUBMISSIONS_PER_MILESTONE = 20;
 type Event<T extends AgreementEvent["type"]> = Extract<AgreementEvent, { type: T }>;
 
 /** Create a draft from untrusted input. `now` is passed in so transitions stay deterministic. */
@@ -21,8 +25,6 @@ export function createDraft(input: unknown, now: number): AgreementState {
     fundedYocto: "0",
     fundedAt: null,
     milestones: terms.milestones.map(freshMilestone),
-    usedReportNonces: [],
-    usedSubmissionIds: [],
     version: 0,
   };
 }
@@ -112,6 +114,7 @@ function freshMilestone(terms: MilestoneTerms): MilestoneState {
     revisionsUsed: 0,
     challengeEndsAt: null,
     lastVerification: null,
+    lastReportNonce: null,
     settlementProposal: null,
     allocation: null,
   };
@@ -182,10 +185,9 @@ function applyMilestoneEvent(state: AgreementState, e: MilestoneEvent): void {
       requireRole(state, e.actor, ["worker"]);
       requireStatus(m, ["PENDING", "REVISION_REQUESTED"]);
       if (e.at >= state.terms.expiresAt) fail("DEADLINE", "agreement has expired");
-      if (state.usedSubmissionIds.includes(e.submissionId)) fail("REPLAY", `submission id '${e.submissionId}' already used`);
-      state.usedSubmissionIds.push(e.submissionId);
+      if (m.submissionCount >= MAX_SUBMISSIONS_PER_MILESTONE) fail("INVALID_TRANSITION", "submission limit reached");
       m.submission = {
-        submissionId: e.submissionId,
+        seq: m.submissionCount + 1,
         artifactHash: e.artifactHash,
         ...(e.uri !== undefined ? { uri: e.uri } : {}),
         submittedAt: e.at,
@@ -196,24 +198,26 @@ function applyMilestoneEvent(state: AgreementState, e: MilestoneEvent): void {
     }
 
     case "RECORD_VERIFICATION": {
-      requireRole(state, e.actor, ["verifier"]);
+      // Any party may relay a report; the verifier's signature is the authority.
+      const r = e.report;
+      if (!verifyReportSignature(state.terms.escrowContract, r, e.signature, state.terms.verifierPublicKey)) {
+        fail("INVALID_SIGNATURE", "report is not signed by the agreed verifier key");
+      }
       if (terms.type !== "AUTOMATED") fail("INVALID_TRANSITION", `milestone '${m.id}' is not automatically verified`);
       requireStatus(m, ["SUBMITTED"]);
-      const r = e.report;
       const sub = m.submission!;
       const mismatches: string[] = [];
-      if (r.verifierId !== e.actor) mismatches.push("verifierId");
       if (r.agreementId !== state.terms.agreementId) mismatches.push("agreementId");
       if (r.milestoneId !== m.id) mismatches.push("milestoneId");
-      if (r.submissionId !== sub.submissionId) mismatches.push("submissionId");
+      if (r.submissionSeq !== sub.seq) mismatches.push("submissionSeq");
       if (r.artifactHash !== sub.artifactHash) mismatches.push("artifactHash");
       if (r.planHash !== computePlanHash(terms.verificationPlan)) mismatches.push("planHash");
       if (mismatches.length) fail("BINDING_MISMATCH", `report does not match: ${mismatches.join(", ")}`, { mismatches });
-      if (state.usedReportNonces.includes(r.nonce)) fail("REPLAY", "verification report nonce already used");
+      if (m.lastReportNonce === r.nonce) fail("REPLAY", "verification report nonce already used");
       if (r.issuedAt < sub.submittedAt) fail("BINDING_MISMATCH", "report predates the submission");
       if (e.at > r.expiresAt) fail("DEADLINE", "verification report has expired");
 
-      state.usedReportNonces.push(r.nonce);
+      m.lastReportNonce = r.nonce;
       m.lastVerification = { outcome: r.outcome, nonce: r.nonce, evidenceDigest: r.evidenceDigest };
       if (r.outcome === "PASS") {
         m.status = "VERIFIED_PENDING_CHALLENGE";

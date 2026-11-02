@@ -32,6 +32,8 @@ pub struct AgreementTerms {
     pub client: AccountId,
     pub worker: AccountId,
     pub verifier: AccountId,
+    /// Raw ed25519 public key (64 lowercase hex chars) that signs verification reports.
+    pub verifier_public_key: String,
     pub resolver: AccountId,
     pub total: U128,
     pub milestones: Vec<MilestoneTerms>,
@@ -165,7 +167,9 @@ pub struct Agreement {
 }
 
 /// What the verifier attests to. Bound to agreement, milestone, submission seq,
-/// artifact and plan; the verifier is authenticated as the predecessor account.
+/// artifact and plan, and authenticated by the verifier's ed25519 signature over
+/// `borsh((REPORT_SIGNING_TAG, contract_account_id, report))`. Field order is part of
+/// that format and must match `reportSigningBytes` in packages/domain.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq)]
 pub struct VerificationReport {

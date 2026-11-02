@@ -20,9 +20,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Build first: the verifier imports the compiled @settle/domain package.
+      - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm -r build
 
   escrow-contract:
     runs-on: ubuntu-latest

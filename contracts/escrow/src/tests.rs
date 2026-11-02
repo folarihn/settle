@@ -1,5 +1,6 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+use ed25519_dalek::{Signer, SigningKey};
 use near_sdk::json_types::U128;
 use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::{testing_env, AccountId, NearToken, PromiseResult};
@@ -17,7 +18,19 @@ const DAY: u64 = 24 * HOUR;
 const ID: &str = "job_demo_0001";
 const STORAGE: u128 = NEAR / 10;
 
-const CONTRACT: &str = "escrow.testnet";
+const CONTRACT: &str = "settle-escrow.testnet";
+
+// Same fixed test seeds as packages/domain/test/fixtures.ts.
+const VERIFIER_SEED: [u8; 32] = [0x11; 32];
+const OTHER_SEED: [u8; 32] = [0x22; 32];
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn sign(r: &VerificationReport, seed: [u8; 32]) -> String {
+    hex(&SigningKey::from_bytes(&seed).sign(&report_signing_bytes(r)).to_bytes())
+}
 const CLIENT: &str = "client.testnet";
 const WORKER: &str = "worker.testnet";
 const VERIFIER: &str = "verifier.testnet";
@@ -66,6 +79,7 @@ fn terms() -> AgreementTerms {
         client: acc(CLIENT),
         worker: acc(WORKER),
         verifier: acc(VERIFIER),
+        verifier_public_key: hex(SigningKey::from_bytes(&VERIFIER_SEED).verifying_key().as_bytes()),
         resolver: acc(RESOLVER),
         total: U128(TOTAL),
         milestones: vec![
@@ -129,9 +143,11 @@ fn report(c: &Escrow, outcome: Outcome, nonce: &str) -> VerificationReport {
     }
 }
 
+/// Signs with the agreed verifier key and relays as the worker: the signature, not the caller, is the authority.
 fn verify(c: &mut Escrow, r: VerificationReport, now: u64) {
-    as_(VERIFIER, 0, now);
-    c.record_verification(r);
+    as_(WORKER, 0, now);
+    let signature = sign(&r, VERIFIER_SEED);
+    c.record_verification(r, signature);
 }
 
 fn verify_with(c: &mut Escrow, outcome: Outcome, nonce: &str, now: u64) {
@@ -317,8 +333,58 @@ fn rejects_reports_not_bound_to_the_live_submission_and_plan() {
     expect_err("NOT_FOUND", || {
         verify(&mut c, VerificationReport { agreement_id: "job_other_0001".into(), ..good.clone() }, T0 + 13)
     });
-    as_(WORKER, 0, T0 + 13);
-    expect_err("UNAUTHORIZED", || c.record_verification(good));
+}
+
+#[test]
+fn rejects_reports_without_a_valid_verifier_signature() {
+    let mut c = funded();
+    submit(&mut c, "api", "commit-1", T0 + 10);
+    let good = report(&c, Outcome::Fail, "nonce-fail-0000001");
+    as_(WORKER, 0, T0 + 11);
+
+    let worker_signed = sign(&good, OTHER_SEED);
+    expect_err("INVALID_SIGNATURE", || c.record_verification(good.clone(), worker_signed));
+    let tampered = VerificationReport { outcome: Outcome::Pass, ..good.clone() };
+    expect_err("INVALID_SIGNATURE", || c.record_verification(tampered, sign(&good, VERIFIER_SEED)));
+    expect_err("INVALID_SIGNATURE", || c.record_verification(good.clone(), "zz".repeat(64)));
+
+    // Signed for another escrow deployment: the contract account is part of the signed bytes.
+    let foreign = {
+        let mut b = builder(WORKER, 0, T0 + 11);
+        b.current_account_id(acc("other-escrow.testnet"));
+        testing_env!(b.build());
+        sign(&good, VERIFIER_SEED)
+    };
+    as_(WORKER, 0, T0 + 11);
+    expect_err("INVALID_SIGNATURE", || c.record_verification(good.clone(), foreign));
+
+    let sig = sign(&good, VERIFIER_SEED);
+    c.record_verification(good, sig);
+    assert_eq!(ms(&c, "api").status, MilestoneStatus::Pending);
+}
+
+/// Pinned vector shared with packages/domain/test/automated.test.ts. The TypeScript
+/// signer produced this signature; verifying it here proves both sides sign identical bytes.
+#[test]
+fn signing_vector_matches_domain() {
+    as_(WORKER, 0, T0);
+    let r = VerificationReport {
+        agreement_id: "job_demo_0001".into(),
+        milestone_id: "api".into(),
+        submission_seq: 2,
+        artifact_hash: "commit-good".into(),
+        plan_hash: digest('a'),
+        outcome: Outcome::Pass,
+        evidence_digest: digest('e'),
+        nonce: "nonce-vector-000001".into(),
+        issued_at_ms: 1_800_000_000_000,
+        expires_at_ms: 1_802_592_000_000,
+    };
+    let public_key = "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737";
+    let signature = "1baab16ab1bc2c385d624804c1a8abc0b67205e03953edeb9e625f03f4a4d948ec86154406aba6dbdee58960994cb5ba2835d6d620a6185029ad775c81b8e403";
+    assert_eq!(hex(SigningKey::from_bytes(&VERIFIER_SEED).verifying_key().as_bytes()), public_key);
+    assert!(verify_report_signature(&r, signature, public_key));
+    assert_eq!(sign(&r, VERIFIER_SEED), signature);
 }
 
 #[test]

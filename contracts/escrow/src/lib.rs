@@ -15,7 +15,12 @@ use near_sdk::{env, near, AccountId, BorshStorageKey, Gas, NearToken, Promise};
 
 use error::{ensure, fail};
 pub use types::*;
-use validate::{validate_artifact_hash, validate_report_shape, validate_terms, MAX_SUBMISSIONS_PER_MILESTONE};
+use validate::{
+    decode_hex, validate_artifact_hash, validate_report_shape, validate_terms, MAX_SUBMISSIONS_PER_MILESTONE,
+};
+
+/// Domain separator for report signatures; see `reportSigningBytes` in packages/domain.
+pub const REPORT_SIGNING_TAG: &str = "settle-report-v1";
 
 /// Upper bound on how much one milestone's state can grow after creation
 /// (submission, proposal, last nonce/outcome, challenge timestamp). The client
@@ -147,14 +152,20 @@ impl Escrow {
         })
     }
 
-    /// Only the agreed verifier account may record results. FAIL returns the milestone
-    /// to Pending; INCONCLUSIVE and RUNNER_ERROR leave it Submitted. Neither releases funds.
-    pub fn record_verification(&mut self, report: VerificationReport) {
+    /// Records a report signed by the agreed verifier key. Anyone may relay it, so the
+    /// verifier never needs a NEAR account key and the relay cannot alter results.
+    /// FAIL returns the milestone to Pending; INCONCLUSIVE and RUNNER_ERROR leave it
+    /// Submitted. None of them releases funds.
+    pub fn record_verification(&mut self, report: VerificationReport, signature: String) {
         validate_report_shape(&report);
         let now = env::block_timestamp_ms();
         let (agreement_id, milestone_id) = (report.agreement_id.clone(), report.milestone_id.clone());
         self.with_milestone(&agreement_id, &milestone_id, |a, i| {
-            require_role(a, &[Role::Verifier]);
+            ensure(
+                verify_report_signature(&report, &signature, &a.terms.verifier_public_key),
+                "INVALID_SIGNATURE",
+                "report is not signed by the agreed verifier key",
+            );
             let plan_hash = match &a.terms.milestones[i].kind {
                 MilestoneKind::Automated { plan_hash } => plan_hash.clone(),
                 _ => fail("INVALID_TRANSITION", "milestone is not automatically verified"),
@@ -449,6 +460,18 @@ impl Escrow {
         let out = f(a, i);
         assert_reconciled(a);
         out
+    }
+}
+
+pub(crate) fn report_signing_bytes(report: &VerificationReport) -> Vec<u8> {
+    near_sdk::borsh::to_vec(&(REPORT_SIGNING_TAG, env::current_account_id().as_str(), report))
+        .unwrap_or_else(|_| fail("VALIDATION", "cannot encode report"))
+}
+
+fn verify_report_signature(report: &VerificationReport, signature_hex: &str, public_key_hex: &str) -> bool {
+    match (decode_hex::<64>(signature_hex), decode_hex::<32>(public_key_hex)) {
+        (Some(sig), Some(pk)) => env::ed25519_verify(&sig, report_signing_bytes(report), &pk),
+        _ => false,
     }
 }
 

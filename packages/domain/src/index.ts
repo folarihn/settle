@@ -5,5 +5,6 @@ export * from "./hash.js";
 export * from "./identity.js";
 export * from "./machine.js";
 export * from "./money.js";
+export * from "./signing.js";
 export * from "./state.js";
 export * from "./terms.js";

@@ -8,6 +8,18 @@ pub const MIN_CHALLENGE_MS: u64 = 60_000;
 pub const MAX_CHALLENGE_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 const MAX_ARTIFACT_HASH_LEN: usize = 200;
 
+/// Decodes exactly N bytes of lowercase hex.
+pub fn decode_hex<const N: usize>(s: &str) -> Option<[u8; N]> {
+    if s.len() != N * 2 || !s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return None;
+    }
+    let mut out = [0u8; N];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
 pub fn is_sha256_digest(s: &str) -> bool {
     s.len() == 71
         && s.starts_with("sha256:")
@@ -37,6 +49,11 @@ pub fn validate_terms(t: &AgreementTerms, now_ms: u64) {
     ensure(is_slug(&t.agreement_id, 8, 64, true), "VALIDATION", "agreement id must be 8-64 url-safe characters");
     ensure(is_sha256_digest(&t.offchain_terms_hash), "VALIDATION", "offchain terms hash must be sha256:<64 hex>");
 
+    ensure(
+        decode_hex::<32>(&t.verifier_public_key).is_some(),
+        "VALIDATION",
+        "verifier public key must be 64 lowercase hex characters",
+    );
     ensure(t.client != t.worker, "VALIDATION", "client and worker must be different accounts");
     for (role, account) in [("verifier", &t.verifier), ("resolver", &t.resolver)] {
         ensure(

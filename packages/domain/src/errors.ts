@@ -6,6 +6,7 @@ export type DomainErrorCode =
   | "HASH_MISMATCH"
   | "BINDING_MISMATCH"
   | "REPLAY"
+  | "INVALID_SIGNATURE"
   | "DEADLINE"
   | "ACCOUNTING"
   | "NOT_FOUND";

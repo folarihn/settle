@@ -12,18 +12,18 @@ export type VerificationOutcome = z.infer<typeof VerificationOutcome>;
 
 /**
  * What the verifier attests to. Every identifier is bound so a report cannot be
- * reused for another job, milestone, submission, artifact or a changed plan.
- * Signature verification is added with the verifier service (Phase 2); here the
- * report is accepted only when submitted by the agreed verifier account.
+ * reused for another job, milestone, submission, artifact or a changed plan. It is
+ * authenticated by the verifier's ed25519 signature (see signing.ts), so any party
+ * may relay it; field set and order match the escrow contract.
  */
 export const VerificationReport = z
   .object({
-    agreementId: z.string().min(1),
+    agreementId: z.string().min(1).max(64),
     milestoneId: MilestoneRef,
-    submissionId: z.string().min(1).max(128),
+    /** Assigned by the state machine / contract on submit: 1, 2, ... */
+    submissionSeq: z.number().int().min(1).max(0xffffffff),
     artifactHash: z.string().min(1).max(200),
     planHash: Sha256Digest,
-    verifierId: NearAccountId,
     outcome: VerificationOutcome,
     evidenceDigest: Sha256Digest,
     nonce: z.string().min(16).max(128),
@@ -45,13 +45,19 @@ export const AgreementEvent = z.discriminatedUnion("type", [
     .object({
       type: z.literal("SUBMIT"),
       ...onMilestone,
-      submissionId: z.string().min(1).max(128),
       // Git commit SHA for technical work, content hash for creative deliverables.
       artifactHash: z.string().min(1).max(200),
       uri: z.string().url().max(2000).optional(),
     })
     .strict(),
-  z.object({ type: z.literal("RECORD_VERIFICATION"), ...onMilestone, report: VerificationReport }).strict(),
+  z
+    .object({
+      type: z.literal("RECORD_VERIFICATION"),
+      ...onMilestone,
+      report: VerificationReport,
+      signature: z.string().regex(/^[0-9a-f]{128}$/, "must be a 64-byte hex ed25519 signature"),
+    })
+    .strict(),
   z.object({ type: z.literal("CHALLENGE"), ...onMilestone, reason: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ type: z.literal("FINALIZE_CHALLENGE"), ...onMilestone }).strict(),
   z.object({ type: z.literal("APPROVE"), ...onMilestone }).strict(),

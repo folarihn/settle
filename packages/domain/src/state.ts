@@ -20,7 +20,7 @@ export type MilestoneStatus =
   | "PAID";
 
 export interface Submission {
-  submissionId: string;
+  seq: number;
   artifactHash: string;
   uri?: string;
   submittedAt: number;
@@ -39,6 +39,8 @@ export interface MilestoneState {
   revisionsUsed: number;
   challengeEndsAt: number | null;
   lastVerification: { outcome: VerificationOutcome; nonce: string; evidenceDigest: string } | null;
+  /** The previous report's nonce; together with seq binding this stops report replay. */
+  lastReportNonce: string | null;
   settlementProposal: { proposer: NearAccountId; workerYocto: Yocto } | null;
   allocation: Allocation | null;
 }
@@ -54,8 +56,6 @@ export interface AgreementState {
   fundedYocto: Yocto;
   fundedAt: number | null;
   milestones: MilestoneState[];
-  usedReportNonces: string[];
-  usedSubmissionIds: string[];
   /** Incremented on every accepted transition; adapters use it for optimistic concurrency. */
   version: number;
 }

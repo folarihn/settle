@@ -66,7 +66,7 @@ describe("agreement funding", () => {
   it("rejects milestone actions before funding and never mutates the input state", () => {
     const d = acceptedByBoth();
     const snapshot = structuredClone(d);
-    expectCode(() => run(d, ["SUBMIT", WORKER, { milestoneId: "api", submissionId: "s1", artifactHash: "abc" }]), "INVALID_TRANSITION");
+    expectCode(() => run(d, ["SUBMIT", WORKER, { milestoneId: "api", artifactHash: "abc" }]), "INVALID_TRANSITION");
     run(d, ["FUND", CLIENT, { termsHash: d.termsHash, amountYocto: TOTAL }]);
     expect(d).toEqual(snapshot);
   });

@@ -11,8 +11,8 @@ import {
   fundedAgreement,
   HOUR,
   milestone,
-  report,
   RESOLVER,
+  signed,
   run,
   TOTAL,
   VERIFIER,
@@ -21,7 +21,7 @@ import {
 
 let n = 0;
 const submitDesign = (s: AgreementState) =>
-  run(s, ["SUBMIT", WORKER, { milestoneId: "design", submissionId: `design-${++n}`, artifactHash: `sha256-design-${n}` }]);
+  run(s, ["SUBMIT", WORKER, { milestoneId: "design", artifactHash: `sha256-design-${++n}` }]);
 
 describe("human-review milestone", () => {
   let funded: AgreementState;
@@ -78,8 +78,8 @@ describe("human-review milestone", () => {
   });
 
   it("does not let a design rejection claw back an earned technical milestone", () => {
-    let s = run(funded, ["SUBMIT", WORKER, { milestoneId: "api", submissionId: "api-1", artifactHash: "commit-1" }]);
-    s = run(s, ["RECORD_VERIFICATION", VERIFIER, { milestoneId: "api", report: report(s) }]);
+    let s = run(funded, ["SUBMIT", WORKER, { milestoneId: "api", artifactHash: "commit-1" }]);
+    s = run(s, ["RECORD_VERIFICATION", VERIFIER, { milestoneId: "api", ...signed(s) }]);
     advance(HOUR);
     s = run(s, ["FINALIZE_CHALLENGE", WORKER, { milestoneId: "api" }]);
 
@@ -101,7 +101,7 @@ describe("human-review milestone", () => {
     expect(milestone(s, "api").allocation).toEqual({ workerYocto: "0", clientYocto: API_AMOUNT });
     expectCode(() => run(s, ["EXPIRE_MILESTONE", CLIENT, { milestoneId: "design" }]), "INVALID_TRANSITION");
     expectCode(
-      () => run(s, ["SUBMIT", WORKER, { milestoneId: "api", submissionId: "late", artifactHash: "x" }]),
+      () => run(s, ["SUBMIT", WORKER, { milestoneId: "api", artifactHash: "x" }]),
       "INVALID_TRANSITION",
     );
   });

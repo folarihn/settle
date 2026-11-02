@@ -2,6 +2,8 @@ import {
   applyEvent,
   computePlanHash,
   createDraft,
+  publicKeyFromSeed,
+  signReport,
   YOCTO_PER_NEAR,
   type AgreementState,
   type AutomatedMilestoneTerms,
@@ -16,6 +18,11 @@ export const CLIENT = "client.testnet";
 export const WORKER = "worker.testnet";
 export const VERIFIER = "verifier.testnet";
 export const RESOLVER = "resolver.testnet";
+export const ESCROW = "settle-escrow.testnet";
+
+// Fixed test keys; never used outside tests.
+export const VERIFIER_SEED = "11".repeat(32);
+export const OTHER_SEED = "22".repeat(32);
 
 export const API_AMOUNT = ((YOCTO_PER_NEAR * 35n) / 100n).toString(); // 0.35 NEAR (70%)
 export const DESIGN_AMOUNT = ((YOCTO_PER_NEAR * 15n) / 100n).toString(); // 0.15 NEAR (30%)
@@ -28,7 +35,9 @@ export function sampleTerms() {
     agreementId: "job_demo_0001",
     client: { kind: "HUMAN" as const, nearAccountId: CLIENT },
     worker: { kind: "AGENT" as const, nearAccountId: WORKER },
+    escrowContract: ESCROW,
     verifierAuthority: VERIFIER,
+    verifierPublicKey: publicKeyFromSeed(VERIFIER_SEED),
     disputeResolver: RESOLVER,
     asset: "NEAR" as const,
     totalYocto: TOTAL,
@@ -96,17 +105,16 @@ export function fundedAgreement(): AgreementState {
 }
 
 let nonceCounter = 0;
-export function report(state: AgreementState, overrides: Partial<VerificationReport> = {}): VerificationReport {
+export function unsignedReport(state: AgreementState, overrides: Partial<VerificationReport> = {}): VerificationReport {
   const terms = state.terms.milestones.find((m) => m.id === "api") as AutomatedMilestoneTerms;
   const m = state.milestones.find((x) => x.id === "api")!;
   nonceCounter += 1;
   return {
     agreementId: state.terms.agreementId,
     milestoneId: "api",
-    submissionId: m.submission?.submissionId ?? "none",
+    submissionSeq: m.submission?.seq ?? 1,
     artifactHash: m.submission?.artifactHash ?? "none",
     planHash: computePlanHash(terms.verificationPlan),
-    verifierId: VERIFIER,
     outcome: "PASS",
     evidenceDigest: `sha256:${"ab".repeat(32)}`,
     nonce: `nonce-${nonceCounter.toString().padStart(12, "0")}`,
@@ -114,6 +122,12 @@ export function report(state: AgreementState, overrides: Partial<VerificationRep
     expiresAt: NOW + 30 * DAY,
     ...overrides,
   };
+}
+
+/** Event fields for RECORD_VERIFICATION: a report signed (by default) with the agreed verifier key. */
+export function signed(state: AgreementState, overrides: Partial<VerificationReport> = {}, seed = VERIFIER_SEED) {
+  const report = unsignedReport(state, overrides);
+  return { report, signature: signReport(ESCROW, report, seed) };
 }
 
 export const milestone = (state: AgreementState, id: string) => state.milestones.find((m) => m.id === id)!;

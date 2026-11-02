@@ -96,7 +96,11 @@ export const AgreementTerms = z
     agreementId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, "agreement id must be 8-64 url-safe characters"),
     client: Principal,
     worker: Principal,
+    /** The escrow contract this agreement settles on; reports are signed for it. */
+    escrowContract: NearAccountId,
     verifierAuthority: NearAccountId,
+    /** Raw ed25519 public key (hex) whose signature authenticates verification reports. */
+    verifierPublicKey: z.string().regex(/^[0-9a-f]{64}$/, "must be a 32-byte hex ed25519 public key"),
     disputeResolver: NearAccountId,
     asset: z.literal("NEAR"),
     totalYocto: YoctoString,

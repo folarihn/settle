@@ -2,7 +2,7 @@
 
 **Verifiable work agreements and fair payments for humans and AI agents.**
 
-> Status: pre-implementation. No live deployment, faucet address, funded job, or passing integration is claimed until independently verified.
+> Status: Phase 0 (agreement engine) implemented; no contract, verifier, API or UI yet. No live deployment, faucet address, funded job, or passing integration is claimed until independently verified.
 
 ## HOW TO TEST (Hackathon judges: start here)
 
@@ -15,7 +15,7 @@
 | Test account | Create a fresh NEAR testnet wallet; do not share seed phrases |
 | Faucet | See [NEAR testnet account and faucet documentation](https://docs.near.org/) and validate current instructions before publishing |
 | Demo walkthrough | Not recorded yet |
-| CI | Planned, not configured yet |
+| CI | GitHub Actions: typecheck, domain tests and build on every PR (`.github/workflows/ci.yml`) |
 
 ### Intended hands-on test (implement and verify before claiming it works)
 
@@ -63,6 +63,14 @@ See the implementation plan for the minimal vertical slice, contract invariants,
 ## Development
 
 All production code lives in this GitHub repository. Use feature branches and reviewed PRs. Remote GitHub Actions and hosted development environments are preferred; the owner need not install local tools. Do not commit API keys, wallet mnemonics, or secrets.
+
+pnpm workspace (Node 22, pnpm 11). `pnpm install && pnpm typecheck && pnpm test` runs everything CI runs.
+
+| Package | What it is |
+| --- | --- |
+| `packages/domain` | Agreement terms schema (Zod), terms/plan hashing, the deterministic milestone state machine and escrow reconciliation. Pure: no I/O, clock passed in. The API, agent SDK and contract mirror these rules. |
+
+Key rules enforced in `packages/domain`: amounts are integer yoctoNEAR strings that must sum exactly to the total; client, worker, verifier and resolver are distinct; both parties accept a specific terms hash before the client funds the exact total; terms cannot change after funding; verification reports must match agreement, milestone, submission, commit and plan hash, and each nonce is single-use; `FAIL`, `INCONCLUSIVE` and `RUNNER_ERROR` never allocate funds; human-review milestones pay only on client approval, a mutually accepted settlement, or a resolver ruling bounded by the agreed protected floor; a payout can be pending only once and a failed transfer restores the claim.
 
 ## License
 

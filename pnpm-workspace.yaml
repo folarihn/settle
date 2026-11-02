@@ -1,6 +1,8 @@
 packages:
   - "packages/*"
   - "services/*"
+  - "apps/*"
 
 allowBuilds:
   esbuild: true
+  secp256k1: set this to true or false

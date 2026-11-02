@@ -411,11 +411,11 @@ fn client_can_challenge_a_pass_only_inside_the_window() {
 fn payout_is_single_flight_and_a_failed_transfer_is_recoverable() {
     let mut c = api_claimable();
     as_(WORKER, 0, T0 + 2 * DAY);
-    let _ = c.payout(ID.into(), "api".into());
+    c.payout(ID.into(), "api".into());
     let m = ms(&c, "api");
     assert_eq!((m.status, m.worker.pending), (MilestoneStatus::PayoutPending, U128(API)));
     expect_err("INVALID_TRANSITION", || {
-        let _ = c.payout(ID.into(), "api".into());
+        c.payout(ID.into(), "api".into());
     });
 
     assert!(!callback(&mut c, "api", Recipient::Worker, API, false));
@@ -424,7 +424,7 @@ fn payout_is_single_flight_and_a_failed_transfer_is_recoverable() {
     assert_eq!(c.get_total_held(), U128(TOTAL));
 
     as_(CLIENT, 0, T0 + 3 * DAY);
-    let _ = c.payout(ID.into(), "api".into());
+    c.payout(ID.into(), "api".into());
     assert!(callback(&mut c, "api", Recipient::Worker, API, true));
     let m = ms(&c, "api");
     assert_eq!((m.status, m.worker.paid), (MilestoneStatus::Paid, U128(API)));
@@ -432,7 +432,7 @@ fn payout_is_single_flight_and_a_failed_transfer_is_recoverable() {
 
     as_(WORKER, 0, T0 + 3 * DAY);
     expect_err("INVALID_TRANSITION", || {
-        let _ = c.payout(ID.into(), "api".into());
+        c.payout(ID.into(), "api".into());
     });
 }
 
@@ -441,10 +441,10 @@ fn only_parties_can_trigger_payout_and_only_the_contract_can_confirm_it() {
     let mut c = api_claimable();
     as_(VERIFIER, 0, T0 + 2 * DAY);
     expect_err("UNAUTHORIZED", || {
-        let _ = c.payout(ID.into(), "api".into());
+        c.payout(ID.into(), "api".into());
     });
     as_(WORKER, 0, T0 + 2 * DAY);
-    let _ = c.payout(ID.into(), "api".into());
+    c.payout(ID.into(), "api".into());
     as_(WORKER, 0, T0 + 2 * DAY);
     let forged =
         catch_unwind(AssertUnwindSafe(|| c.on_transfer(ID.into(), "api".into(), Recipient::Worker, U128(API))));
@@ -461,7 +461,7 @@ fn revisions_keep_funds_locked_until_approval() {
     c.request_revision(ID.into(), "design".into(), "increase contrast".into());
     as_(WORKER, 0, T0 + 12);
     expect_err("INVALID_TRANSITION", || {
-        let _ = c.payout(ID.into(), "design".into());
+        c.payout(ID.into(), "design".into());
     });
     expect_err("UNAUTHORIZED", || c.approve(ID.into(), "design".into()));
 
@@ -490,7 +490,7 @@ fn mutual_partial_settlement_pays_both_sides_and_survives_a_one_sided_failure() 
     assert_eq!((m.worker.due, m.client.due), (half, U128(DESIGN - half.0)));
 
     as_(CLIENT, 0, T0 + 13);
-    let _ = c.payout(ID.into(), "design".into());
+    c.payout(ID.into(), "design".into());
     assert!(callback(&mut c, "design", Recipient::Worker, half.0, true));
     assert_eq!(ms(&c, "design").status, MilestoneStatus::PayoutPending);
     assert!(!callback(&mut c, "design", Recipient::Client, DESIGN - half.0, false));
@@ -499,7 +499,7 @@ fn mutual_partial_settlement_pays_both_sides_and_survives_a_one_sided_failure() 
 
     // Retrying sends only the client refund; the worker cannot be paid twice.
     as_(CLIENT, 0, T0 + 14);
-    let _ = c.payout(ID.into(), "design".into());
+    c.payout(ID.into(), "design".into());
     let m = ms(&c, "design");
     assert_eq!((m.worker.pending, m.client.pending), (U128(0), U128(DESIGN - half.0)));
     assert!(callback(&mut c, "design", Recipient::Client, DESIGN - half.0, true));
@@ -521,7 +521,7 @@ fn dispute_rulings_stay_within_the_floor_and_do_not_touch_earned_milestones() {
 
     for (id, worker_amount, client_amount) in [("api", API, 0), ("design", FLOOR, DESIGN - FLOOR)] {
         as_(WORKER, 0, T0 + 3 * DAY);
-        let _ = c.payout(ID.into(), id.into());
+        c.payout(ID.into(), id.into());
         callback(&mut c, id, Recipient::Worker, worker_amount, true);
         if client_amount > 0 {
             callback(&mut c, id, Recipient::Client, client_amount, true);
@@ -576,4 +576,16 @@ fn prepaid_storage_covers_worst_case_growth() {
     c.propose_settlement(ID.into(), "design".into(), U128(DESIGN));
     let grown = size(&c) - before;
     assert!(grown <= GROWTH_BYTES_PER_MILESTONE * 2, "grew {grown} bytes");
+}
+
+/// Pinned vector shared with packages/domain/test/contract.test.ts: the API's TypeScript
+/// port of this hash must agree byte for byte, or it would mis-detect onchain terms.
+#[test]
+fn terms_hash_vector_matches_domain() {
+    as_(CLIENT, 0, T0);
+    let c = Escrow::default();
+    assert_eq!(
+        c.compute_terms_hash(terms()),
+        "sha256:c6457601cba9b243067f750272d1ef45c7d542584d30f9fe968dc4dfd44f751f"
+    );
 }

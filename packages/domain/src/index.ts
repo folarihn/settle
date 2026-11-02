@@ -1,4 +1,6 @@
 export * from "./accounting.js";
+export * from "./borsh.js";
+export * from "./contract.js";
 export * from "./errors.js";
 export * from "./events.js";
 export * from "./hash.js";

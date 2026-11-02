@@ -11,7 +11,16 @@ permissions:
 jobs:
   typescript:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: settle
+          POSTGRES_DB: settle_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -20,10 +29,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Build first: the verifier imports the compiled @settle/domain package.
+      # Build first: packages import each other's compiled output.
       - run: pnpm build
       - run: pnpm typecheck
+      # Unit and integration tests; the API tests use in-process PGlite here...
       - run: pnpm test
+      # ...and are repeated against a real Postgres server.
+      - name: API and agent SDK tests on Postgres 16
+        run: pnpm --workspace-concurrency=1 --filter @settle/api --filter @settle/agent-sdk test
+        env:
+          SETTLE_TEST_DATABASE_URL: postgres://postgres:settle@localhost:5432/settle_test
 
   escrow-contract:
     runs-on: ubuntu-latest
@@ -43,3 +58,45 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
       - run: cargo test
+
+  # Builds the deployable wasm and runs it on a real local NEAR node (near-workspaces).
+  # Unit tests above use a mocked chain; this job is the onchain-execution evidence.
+  escrow-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: contracts/escrow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts/escrow
+          key: sandbox
+      - name: Install cargo-near 0.22.0
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
+      - run: cargo near build non-reproducible-wasm
+      - run: sha256sum target/near/settle_escrow.wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: settle_escrow-wasm
+          path: contracts/escrow/target/near/settle_escrow.wasm
+      - run: cargo test --features sandbox --test sandbox -- --nocapture
+
+  # NEP-330 reproducible build in the pinned Docker image (see Cargo.toml metadata).
+  escrow-reproducible:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: contracts/escrow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-near 0.22.0
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
+      - run: cargo near build reproducible-wasm
+      - run: sha256sum target/near/settle_escrow.wasm | tee -a "$GITHUB_STEP_SUMMARY"

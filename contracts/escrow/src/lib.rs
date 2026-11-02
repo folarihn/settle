@@ -343,7 +343,12 @@ impl Escrow {
 
     /// Sends every due share of a Claimable milestone. Each transfer has its own
     /// callback; while any is in flight the milestone is PayoutPending and cannot be paid again.
-    pub fn payout(&mut self, agreement_id: String, milestone_id: String) -> Promise {
+    ///
+    /// Returns nothing: a split payout schedules two independent transfer+callback chains,
+    /// and NEAR rejects returning a joint (`and`) promise ("Returning joint promise is
+    /// currently prohibited"), which reverted every two-recipient payout on a real node.
+    /// Results are observable through `get_agreement` and the `payout ...` logs.
+    pub fn payout(&mut self, agreement_id: String, milestone_id: String) {
         let mut transfers: Vec<(Recipient, AccountId, u128)> = Vec::new();
         self.with_milestone(&agreement_id, &milestone_id, |a, i| {
             require_role(a, &[Role::Client, Role::Worker]);
@@ -362,22 +367,17 @@ impl Escrow {
             m.status = MilestoneStatus::PayoutPending;
         });
 
-        let mut promise: Option<Promise> = None;
         for (r, account, amount) in transfers {
-            let p = Promise::new(account).transfer(NearToken::from_yoctonear(amount)).then(
-                Self::ext(env::current_account_id()).with_static_gas(CALLBACK_GAS).on_transfer(
+            Promise::new(account)
+                .transfer(NearToken::from_yoctonear(amount))
+                .then(Self::ext(env::current_account_id()).with_static_gas(CALLBACK_GAS).on_transfer(
                     agreement_id.clone(),
                     milestone_id.clone(),
                     r,
                     U128(amount),
-                ),
-            );
-            promise = Some(match promise {
-                Some(prev) => prev.and(p),
-                None => p,
-            });
+                ))
+                .detach();
         }
-        promise.unwrap()
     }
 
     /// Transfer callback: success moves pending -> paid; failure moves pending -> due so

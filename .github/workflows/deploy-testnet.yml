@@ -1,0 +1,49 @@
+name: Deploy escrow to NEAR testnet
+
+# Manual only. The contract account's key lives in GitHub secrets, never in the repo or chat:
+#   SETTLE_CONTRACT_ACCOUNT_ID   e.g. settle-escrow.<you>.testnet
+#   SETTLE_CONTRACT_PUBLIC_KEY   ed25519:... (a full-access key of that account)
+#   SETTLE_CONTRACT_PRIVATE_KEY  ed25519:... (its private key)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: testnet
+    defaults:
+      run:
+        working-directory: contracts/escrow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install cargo-near 0.22.0 and near-cli-rs 0.30.1
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/near-cli-rs/releases/download/v0.30.1/near-cli-rs-installer.sh | sh
+      # Reproducible (Docker) build: anyone can rebuild this commit and compare the hash.
+      - run: cargo near build reproducible-wasm
+      - run: sha256sum target/near/settle_escrow.wasm | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Deploy (testnet only, no init call; the contract state is Default)
+        env:
+          ACCOUNT_ID: ${{ secrets.SETTLE_CONTRACT_ACCOUNT_ID }}
+          PUBLIC_KEY: ${{ secrets.SETTLE_CONTRACT_PUBLIC_KEY }}
+          PRIVATE_KEY: ${{ secrets.SETTLE_CONTRACT_PRIVATE_KEY }}
+        run: |
+          case "$ACCOUNT_ID" in *.testnet) ;; *) echo "refusing: $ACCOUNT_ID is not a .testnet account" >&2; exit 1;; esac
+          near contract deploy "$ACCOUNT_ID" use-file target/near/settle_escrow.wasm without-init-call \
+            network-config testnet \
+            sign-with-plaintext-private-key --signer-public-key "$PUBLIC_KEY" --signer-private-key "$PRIVATE_KEY" \
+            send
+      - name: Smoke-check the deployed contract
+        env:
+          ACCOUNT_ID: ${{ secrets.SETTLE_CONTRACT_ACCOUNT_ID }}
+        run: |
+          near contract call-function as-read-only "$ACCOUNT_ID" get_total_held json-args '{}' network-config testnet now
+          echo "Deployed to https://testnet.nearblocks.io/address/$ACCOUNT_ID" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -6,6 +6,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Seconds until a rate-limited client may retry (sent as Retry-After). */
+    readonly retryAfterSec?: number,
   ) {
     super(message);
     this.name = "ApiError";

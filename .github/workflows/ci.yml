@@ -76,8 +76,8 @@ jobs:
         with:
           workspaces: contracts/escrow
           key: sandbox
-      - name: Install cargo-near 0.22.0
-        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
+      - name: Install pinned, checksum-verified cargo-near 0.22.0
+        run: ../../scripts/install-near-tools.sh cargo-near
       - run: cargo near build non-reproducible-wasm
       - run: sha256sum target/near/settle_escrow.wasm
       - uses: actions/upload-artifact@v4
@@ -96,7 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-near 0.22.0
-        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
+      - name: Install pinned, checksum-verified cargo-near 0.22.0
+        run: ../../scripts/install-near-tools.sh cargo-near
       - run: cargo near build reproducible-wasm
       - run: sha256sum target/near/settle_escrow.wasm | tee -a "$GITHUB_STEP_SUMMARY"

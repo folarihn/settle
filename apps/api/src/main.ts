@@ -4,7 +4,13 @@ import { createPgDb, createPgliteDb, migrate } from "./db.js";
 import { buildApp } from "./server.js";
 import { runWorkerLoop } from "./worker.js";
 
-const config = configFromEnv();
+let config: ReturnType<typeof configFromEnv>;
+try {
+  config = configFromEnv();
+} catch (e) {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
+}
 const db = config.databaseUrl ? createPgDb(config.databaseUrl) : createPgliteDb(config.pgliteDir);
 await migrate(db);
 const { app, verifications } = buildApp({ db, chain: new RpcChainReader(config.rpcUrl, config.escrowContract), config, logger: true });

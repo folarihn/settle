@@ -1,0 +1,60 @@
+# Render Blueprint for the SETTLE testnet demo (Dashboard -> New -> Blueprint -> this repo).
+# One web service (API + web app + demo fixture, no keys), one background worker (the only
+# holder of the verifier seed) and one managed Postgres. Values marked `sync: false` are
+# entered in the Render dashboard when the Blueprint is created; they are never in git.
+# No `plan` is set, so Render's current defaults apply; choose sizes (cost) in the dashboard.
+# A background worker is not available on Render's free tier.
+
+envVarGroups:
+  - name: settle-shared
+    envVars:
+      - key: NEAR_NETWORK
+        value: testnet
+      - key: SETTLE_ESCROW_CONTRACT
+        sync: false
+      - key: SETTLE_VERIFIER_ACCOUNT
+        sync: false
+      - key: SETTLE_VERIFIER_PUBLIC_KEY
+        sync: false
+      - key: SETTLE_RESOLVER_ACCOUNT
+        sync: false
+
+services:
+  - type: web
+    name: settle
+    runtime: node
+    branch: docs/settle-build-blueprint
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: node apps/api/dist/main.js
+    healthCheckPath: /healthz
+    envVars:
+      - fromGroup: settle-shared
+      - key: SETTLE_DATABASE_URL
+        fromDatabase:
+          name: settle-db
+          property: connectionString
+      - key: SETTLE_WEB_DIST
+        value: apps/web/dist
+      - key: SETTLE_ENABLE_FIXTURE
+        value: "1"
+      - key: SETTLE_TRUST_PROXY
+        value: "1"
+
+  - type: worker
+    name: settle-verifier
+    runtime: node
+    branch: docs/settle-build-blueprint
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: node apps/api/dist/worker-main.js
+    envVars:
+      - fromGroup: settle-shared
+      - key: SETTLE_DATABASE_URL
+        fromDatabase:
+          name: settle-db
+          property: connectionString
+      - key: SETTLE_VERIFIER_SEED
+        sync: false
+
+databases:
+  - name: settle-db
+    postgresMajorVersion: "16"

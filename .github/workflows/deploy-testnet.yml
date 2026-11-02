@@ -1,20 +1,37 @@
 name: Deploy escrow to NEAR testnet
 
-# Manual only. The contract account's key lives in GitHub secrets, never in the repo or chat:
-#   SETTLE_CONTRACT_ACCOUNT_ID   e.g. settle-escrow.<you>.testnet
-#   SETTLE_CONTRACT_PUBLIC_KEY   ed25519:... (a full-access key of that account)
-#   SETTLE_CONTRACT_PRIVATE_KEY  ed25519:... (its private key)
+# Manual only. Inputs come from repository secrets, never from the repo or chat:
+#   SETTLE_CONTRACT_ACCOUNT_ID  e.g. settle-escrow-<name>.testnet
+#   SETTLE_CONTRACT_KEY_JSON    the whole credentials file near-cli wrote for that account:
+#                               {"account_id": ..., "public_key": "ed25519:...", "private_key": "ed25519:..."}
+#
+# The contract has no init method and no owner: state comes from `Default` on first use,
+# so it is deployed `without-init-call`. Whoever holds this account's full-access key can
+# replace the code, so for a public demo either keep the key in this secret only or lock
+# the account afterwards (see docs/DEPLOY_TESTNET.md).
 on:
   workflow_dispatch:
+    inputs:
+      allow_redeploy:
+        description: "Type REDEPLOY to replace code on an account that already has a contract (existing agreements must stay compatible)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
+
+concurrency:
+  group: deploy-testnet
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: testnet
+    env:
+      ACCOUNT_ID: ${{ secrets.SETTLE_CONTRACT_ACCOUNT_ID }}
+      RPC: https://rpc.testnet.fastnear.com
     defaults:
       run:
         working-directory: contracts/escrow
@@ -23,27 +40,63 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - name: Install cargo-near 0.22.0 and near-cli-rs 0.30.1
+      - name: Install pinned, checksum-verified cargo-near and near-cli-rs
+        run: ../../scripts/install-near-tools.sh cargo-near near-cli
+
+      - name: Preflight (testnet account, balance, existing code)
+        env:
+          ALLOW_REDEPLOY: ${{ inputs.allow_redeploy }}
         run: |
-          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh
-          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/near-cli-rs/releases/download/v0.30.1/near-cli-rs-installer.sh | sh
+          case "$ACCOUNT_ID" in *.testnet) ;; *) echo "refusing: '$ACCOUNT_ID' is not a .testnet account" >&2; exit 1;; esac
+          body=$(jq -nc --arg a "$ACCOUNT_ID" '{jsonrpc:"2.0",id:"p",method:"query",params:{request_type:"view_account",finality:"final",account_id:$a}}')
+          resp=$(curl -fsS "$RPC" -H 'content-type: application/json' -d "$body")
+          if [ "$(jq -r '.result.amount // empty' <<<"$resp")" = "" ]; then echo "account not found: $resp" >&2; exit 1; fi
+          amount=$(jq -r '.result.amount' <<<"$resp"); code=$(jq -r '.result.code_hash' <<<"$resp")
+          echo "balance (yocto): $amount"; echo "current code_hash: $code"
+          # ~230 KB of code needs ~2.3 NEAR of storage stake; require 3 NEAR of headroom.
+          python3 -c "import sys; sys.exit(0 if int('$amount') >= 3 * 10**24 else 1)" || { echo "need at least 3 NEAR on $ACCOUNT_ID for code storage" >&2; exit 1; }
+          if [ "$code" != "11111111111111111111111111111111" ] && [ "$ALLOW_REDEPLOY" != "REDEPLOY" ]; then
+            echo "refusing: $ACCOUNT_ID already has a contract. Re-run with allow_redeploy=REDEPLOY if intended." >&2; exit 1
+          fi
+
       # Reproducible (Docker) build: anyone can rebuild this commit and compare the hash.
       - run: cargo near build reproducible-wasm
-      - run: sha256sum target/near/settle_escrow.wasm | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Deploy (testnet only, no init call; the contract state is Default)
-        env:
-          ACCOUNT_ID: ${{ secrets.SETTLE_CONTRACT_ACCOUNT_ID }}
-          PUBLIC_KEY: ${{ secrets.SETTLE_CONTRACT_PUBLIC_KEY }}
-          PRIVATE_KEY: ${{ secrets.SETTLE_CONTRACT_PRIVATE_KEY }}
+      - name: Record the WASM hash
         run: |
-          case "$ACCOUNT_ID" in *.testnet) ;; *) echo "refusing: $ACCOUNT_ID is not a .testnet account" >&2; exit 1;; esac
+          sha=$(sha256sum target/near/settle_escrow.wasm | cut -d' ' -f1)
+          echo "WASM_SHA256=$sha" >> "$GITHUB_ENV"
+          echo "WASM sha256: \`$sha\` (commit ${GITHUB_SHA})" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy (no init call)
+        env:
+          KEY_JSON: ${{ secrets.SETTLE_CONTRACT_KEY_JSON }}
+        run: |
+          key_file="$RUNNER_TEMP/contract-key.json"
+          ( umask 077; printf '%s' "$KEY_JSON" > "$key_file" )
+          trap 'rm -f "$key_file"' EXIT
+          [ "$(jq -r '.account_id // empty' "$key_file")" = "" ] || [ "$(jq -r '.account_id' "$key_file")" = "$ACCOUNT_ID" ] \
+            || { echo "key file is for a different account" >&2; exit 1; }
           near contract deploy "$ACCOUNT_ID" use-file target/near/settle_escrow.wasm without-init-call \
-            network-config testnet \
-            sign-with-plaintext-private-key --signer-public-key "$PUBLIC_KEY" --signer-private-key "$PRIVATE_KEY" \
-            send
-      - name: Smoke-check the deployed contract
-        env:
-          ACCOUNT_ID: ${{ secrets.SETTLE_CONTRACT_ACCOUNT_ID }}
+            network-config testnet sign-with-access-key-file "$key_file" send
+
+      - name: Verify the deployed code and that the contract answers
         run: |
-          near contract call-function as-read-only "$ACCOUNT_ID" get_total_held json-args '{}' network-config testnet now
-          echo "Deployed to https://testnet.nearblocks.io/address/$ACCOUNT_ID" | tee -a "$GITHUB_STEP_SUMMARY"
+          sleep 5
+          q() { curl -fsS "$RPC" -H 'content-type: application/json' -d "$1"; }
+          view=$(jq -nc --arg a "$ACCOUNT_ID" '{jsonrpc:"2.0",id:"v",method:"query",params:{request_type:"view_account",finality:"final",account_id:$a}}')
+          onchain=$(q "$view" | jq -r '.result.code_hash')
+          expected=$(python3 -c "
+          import hashlib
+          a='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+          n=int.from_bytes(hashlib.sha256(open('target/near/settle_escrow.wasm','rb').read()).digest(),'big'); s=''
+          while n: n,r=divmod(n,58); s=a[r]+s
+          print(s)")
+          echo "onchain code_hash: $onchain"; echo "built   code_hash: $expected"
+          [ "$onchain" = "$expected" ] || { echo "deployed code does not match this build" >&2; exit 1; }
+          call=$(jq -nc --arg a "$ACCOUNT_ID" '{jsonrpc:"2.0",id:"c",method:"query",params:{request_type:"call_function",finality:"final",account_id:$a,method_name:"get_total_held",args_base64:"e30="}}')
+          held=$(q "$call" | jq -r '.result.result | implode')
+          echo "get_total_held: $held"
+          {
+            echo "Deployed \`$ACCOUNT_ID\` — code_hash \`$onchain\` matches this build."
+            echo "Explorer: https://testnet.nearblocks.io/address/$ACCOUNT_ID"
+          } | tee -a "$GITHUB_STEP_SUMMARY"

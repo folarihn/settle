@@ -10,7 +10,7 @@ import { runWorkerLoop } from "./worker.js";
  * Verification worker: a separate process from the internet-facing API. It is the only
  * place the verifier seed exists. It makes outbound HTTP checks and writes results to Postgres.
  */
-const config = configFromEnv();
+const config = configFromEnv(process.env, "worker");
 const seed = process.env.SETTLE_VERIFIER_SEED ?? "";
 if (!/^[0-9a-f]{64}$/.test(seed)) throw new Error("SETTLE_VERIFIER_SEED must be a 64-character hex seed");
 if (publicKeyFromSeed(seed) !== config.verifierPublicKey) {

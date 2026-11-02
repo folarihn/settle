@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import fastifyStatic from "@fastify/static";
 import { DEMO_PLAN, fixtureResponse } from "@settle/fixture-api";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
@@ -10,6 +10,7 @@ import type { Config } from "./config.js";
 import type { Db } from "./db.js";
 import { ApiError, toErrorResponse } from "./errors.js";
 import { JobService } from "./jobs.js";
+import { LIMITS, RateLimiter, type Limits } from "./rate-limit.js";
 import { VerificationService } from "./verifications.js";
 
 export interface AppDeps {
@@ -18,13 +19,16 @@ export interface AppDeps {
   config: Config;
   now?: () => number;
   logger?: boolean;
+  limits?: Limits;
 }
 
 const IdParams = z.object({ id: z.string().min(1).max(80) });
 const MilestoneParams = IdParams.extend({ milestoneId: z.string().min(1).max(64) });
 
-export function buildApp({ db, chain, config, now = Date.now, logger = false }: AppDeps) {
-  const app = Fastify({ logger, bodyLimit: 256 * 1024 });
+export function buildApp({ db, chain, config, now = Date.now, logger = false, limits = LIMITS }: AppDeps) {
+  // Behind a reverse proxy (any hosted deployment), trust X-Forwarded-For for client IPs.
+  const app = Fastify({ logger, bodyLimit: 256 * 1024, trustProxy: config.trustProxy });
+  const limiter = new RateLimiter(now);
   const jobs = new JobService(db, chain, config, now);
   const verifications = new VerificationService(db, jobs, config, now);
 
@@ -36,8 +40,11 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false }: 
     if (status === 500 && fastifyStatus && fastifyStatus < 500) {
       return reply.code(fastifyStatus).send({ error: { code: "BAD_REQUEST", message: (err as Error).message } });
     }
+    if (err instanceof ApiError && err.retryAfterSec !== undefined) reply.header("retry-after", String(err.retryAfterSec));
     return reply.code(status).send(body);
   });
+
+  const limitIp = (req: FastifyRequest) => limiter.hit(`auth:${req.ip}`, limits.authPerIp.max, limits.authPerIp.windowMs);
 
   const auth = (req: FastifyRequest): Promise<Principal> => principalFromToken(db, req.headers.authorization, now());
 
@@ -62,7 +69,26 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false }: 
     return reply.code(status).send(body);
   }
 
+  // Liveness: the process is up.
   app.get("/healthz", async () => ({ ok: true }));
+  // Readiness: the database answers and the escrow contract is deployed and answering.
+  app.get("/readyz", async (_req, reply) => {
+    const checks: Record<string, string> = {};
+    try {
+      await db.query("SELECT 1");
+      checks.database = "ok";
+    } catch (e) {
+      checks.database = `error: ${(e as Error).message}`;
+    }
+    try {
+      await chain.getAgreement("readyz-probe");
+      checks.contract = "ok";
+    } catch (e) {
+      checks.contract = `error: ${(e as Error).message}`;
+    }
+    const ok = Object.values(checks).every((v) => v === "ok");
+    return reply.code(ok ? 200 : 503).send({ ok, checks, escrowContract: config.escrowContract, network: config.network });
+  });
 
   app.get("/v1/config", async () => ({
     network: config.network,
@@ -74,14 +100,20 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false }: 
     authRecipient: config.authRecipient,
     demoPlan: DEMO_PLAN,
     fixturePath: config.enableFixture ? "/fixture" : null,
+    /** Stable public HTTPS base of the demo fixture, for agents and judges. */
+    fixtureBaseUrl: config.enableFixture && config.publicUrl ? `${config.publicUrl.replace(/\/+$/, "")}/fixture` : null,
   }));
 
   // ---- auth (identical for humans and agents) ----
   app.post("/v1/auth/challenge", async (req) => {
+    limitIp(req);
     const { accountId } = ChallengeRequest.parse(req.body);
     return createChallenge(db, accountId, config.authRecipient, now());
   });
-  app.post("/v1/auth/verify", async (req) => verifyChallenge(db, chain, VerifyRequest.parse(req.body), config.authRecipient, now()));
+  app.post("/v1/auth/verify", async (req) => {
+    limitIp(req);
+    return verifyChallenge(db, chain, VerifyRequest.parse(req.body), config.authRecipient, now());
+  });
   app.get("/v1/me", async (req) => auth(req));
 
   // ---- jobs ----
@@ -106,6 +138,8 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false }: 
   app.post("/v1/jobs/:id/milestones/:milestoneId/verifications", async (req, reply) => {
     const p = await auth(req);
     const { id, milestoneId } = MilestoneParams.parse(req.params);
+    const { max, windowMs } = limits.verificationsPerAccount;
+    limiter.hit(`verify:${p.accountId}`, max, windowMs);
     return idempotent(p, req, reply, 202, () => verifications.request(p, id, milestoneId));
   });
   app.get("/v1/jobs/:id/verifications", async (req) => ({
@@ -121,8 +155,9 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false }: 
       return reply.code(r?.status ?? 404).type("application/json").send(r?.body ?? '{"error":"not found"}');
     });
   }
-  if (config.webDist && existsSync(join(config.webDist, "index.html"))) {
-    app.register(fastifyStatic, { root: config.webDist, wildcard: false });
+  const webRoot = config.webDist ? resolve(config.webDist) : null;
+  if (webRoot && existsSync(join(webRoot, "index.html"))) {
+    app.register(fastifyStatic, { root: webRoot, wildcard: false });
     app.setNotFoundHandler((req, reply) =>
       req.method === "GET" && !req.url.startsWith("/v1/")
         ? reply.sendFile("index.html")

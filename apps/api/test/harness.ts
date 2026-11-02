@@ -21,6 +21,7 @@ export const config: Config = {
   resolverAccount: "resolver.testnet",
   authRecipient: "settle",
   enableFixture: true,
+  trustProxy: false,
 };
 
 /** Stands in for NEAR RPC: which keys belong to which accounts, and what the contract holds. */
@@ -58,7 +59,9 @@ export async function startHarness(db?: Db): Promise<Harness> {
   const database = db ?? (url ? createPgDb(url) : createPgliteDb());
   await migrate(database);
   const chain = new FakeChain();
-  const { app, verifications } = buildApp({ db: database, chain, config });
+  // Generous limits: this shared app logs in many times; rate limiting has its own test.
+  const limits = { authPerIp: { max: 10_000, windowMs: 60_000 }, verificationsPerAccount: { max: 10_000, windowMs: 60_000 } };
+  const { app, verifications } = buildApp({ db: database, chain, config, limits });
 
   const fixture = createServer((req, res) => {
     const r = fixtureResponse(req.method ?? "GET", req.url ?? "/");

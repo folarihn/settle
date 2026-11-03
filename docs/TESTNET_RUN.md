@@ -226,3 +226,27 @@ Agreement `job_aWxkJqf1IrljvQk9` (0.01 NEAR, one automated milestone), through t
 | 17:42:15 | The API's own service-to-service wake-up again got `502`, confirming the diagnosis from run 4. |
 
 Caveat: here the verifier had no instance about 2 minutes after a deploy, not after a 15-minute idle sleep. For the hours-long sleep in run 4, an outside wake-up took 22.8 s to answer. Expect roughly 15–60 s for the first verification after idle.
+
+
+## Run 6: owner's browser test with real wallets (PASS)
+
+The first run done entirely by people in the live web app, using two Meteor Wallet testnet accounts in separate browser profiles: client `redbelt3203.testnet`, worker `finedish8345.testnet` (funded with 2.5 and 1 testnet NEAR from the project's test accounts). Agreement `job_r_hjk81zXxRTZBYl`. Each step was confirmed with `get_agreement` at `final` finality as it happened:
+
+| Step | Onchain state afterwards |
+| --- | --- |
+| Client signs in (NEP-413) and creates the agreement | `Draft`, parties as entered |
+| Worker accepts terms | `accepted_by_worker: true` |
+| Client funds 0.5 NEAR | `Funded` |
+| Worker submits `/fixture/broken`, runs verification, records it | API milestone `Pending`, submission 1, last outcome `Fail` — nothing payable |
+| Worker submits `/fixture/fixed`, runs verification, records it | `VerifiedPendingChallenge`, submission 2 (`demo-fixed`), outcome `Pass`; challenge window ends 18:40:21 UTC |
+| After the window: finalize, then payout | API milestone `Paid`, worker paid 0.35 NEAR (worker balance 1 → 1.348 NEAR) |
+| Worker submits `design-v1`; client requests a revision | `RevisionRequested`, 1 of 2 revisions used, nothing allocated |
+| Worker submits `design-v2`, proposes 0.075 NEAR; client accepts | `Claimable`: 0.075 NEAR due to each side |
+| Payout | Design milestone `Paid`: 0.075 NEAR to the worker, 0.075 NEAR refunded to the client; agreement **`Completed`** |
+
+Bugs this run found, all fixed and deployed during the run:
+- **Duplicate create:** the page offered **Create onchain** again while the first `create_agreement` was confirming, and the contract refused the duplicate. Fixed in `6f0c84f`.
+- **Record onchain stayed visible:** the button remained after a result was recorded, and a second click was refused. Fixed in `e6b9081`.
+- **Payout label:** "Pay out" was confusing for the worker. It now reads **Claim payment** for the worker and **Release payment** for the client.
+
+Zero-deposit actions (finalize, payout, submit) were approved by Meteor's function-call key for the escrow contract without a pop-up; deposit-bearing ones (create, fund) asked for approval.

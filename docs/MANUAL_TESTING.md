@@ -22,16 +22,16 @@ Live deployment: `<app>` = **https://settle-9ewd.onrender.com** (contract `settl
 2. **Run verification**. Within a few seconds the run shows **FAIL**. **Evidence** shows each agreed check with PASS/FAIL (here `$.status == "ok"` FAIL, observed `got "degraded"`) and confirms the evidence matches the verifier's signed report. **Record onchain** relays the signed report. Expected: the milestone goes back to `PENDING`; nothing is allocated.
 3. Worker: commit `demo-fixed`, URL `<app>/fixture/fixed` → **Submit work** → **Run verification** → **PASS** → **Record onchain**. Expected: `VERIFIED_PENDING_CHALLENGE` with a challenge end time shown.
 4. Client (optional): before that time, **Challenge PASS** with a reason, which sends the milestone to the resolver.
-5. Otherwise, after the window (reload the page): **Finalize after challenge window**, then **Pay out (onchain transfer)**. Expected: `PAID`. The nearblocks link shows 0.35 NEAR transferred to the worker.
-6. **Pay out** no longer appears, and calling `payout` again onchain fails with `INVALID_TRANSITION`. No double payment.
+5. Otherwise, after the window (reload the page): **Finalize after challenge window**, then **Claim payment** (worker) or **Release payment** (client). Expected: `PAID`. The nearblocks link shows 0.35 NEAR transferred to the worker.
+6. **Claim payment** / **Release payment** no longer appears, and calling `payout` again onchain fails with `INVALID_TRANSITION`. No double payment.
 
 ## 4. Design milestone: revision, then approval or partial settlement
 
 1. Worker: content hash `design-v1` (optionally a link) → **Submit work**.
-2. Client: type feedback → **Request revision**. Expected: `REVISION_REQUESTED`, **Pay out** is not available, and funds stay locked.
+2. Client: type feedback → **Request revision**. Expected: `REVISION_REQUESTED`, **Claim payment** / **Release payment** is not available, and funds stay locked.
 3. Worker submits `design-v2`. Then either:
-   - Client: **Approve and release** → **Pay out**. The worker receives 0.15 NEAR; or
-   - Worker: enter `0.075` → **Propose partial settlement**; client: **Accept 0.075 NEAR settlement** → **Pay out**. Two transfers: 0.075 NEAR to the worker and 0.075 NEAR back to the client.
+   - Client: **Approve and release** → **Claim payment** / **Release payment**. The worker receives 0.15 NEAR; or
+   - Worker: enter `0.075` → **Propose partial settlement**; client: **Accept 0.075 NEAR settlement** → **Claim payment** / **Release payment**. Two transfers: 0.075 NEAR to the worker and 0.075 NEAR back to the client.
 4. Dispute variant: **Open dispute** with a reason. Sign in as the resolver account and try an award below 0.075 NEAR. Expected: rejected (`ACCOUNTING`, below the agreed floor). An award between 0.075 and 0.15 NEAR is accepted.
 5. Rejecting the design never changes the API milestone's allocation.
 

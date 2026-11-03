@@ -396,7 +396,7 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
 
           {s === "CLAIMABLE" && job.calls.payout[m.id] && (is("client") || is("worker")) && (
             <button disabled={busy} onClick={() => signOnly("payout", job.calls.payout[m.id]!)}>
-              Pay out (onchain transfer)
+              {is("worker") ? "Claim payment" : "Release payment"} (onchain transfer)
             </button>
           )}
 

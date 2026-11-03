@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { publicKeyFromSeed, type ContractAgreement } from "@settle/domain";
+import { computeOnchainTermsHash, publicKeyFromSeed, toContractTerms, type ContractAgreement } from "@settle/domain";
 import { DEMO_PLAN, fixtureResponse } from "@settle/fixture-api";
 import { base58Encode, buildApp, createPgDb, createPgliteDb, drainQueue, migrate, nep413Hash, type ChainReader, type Config, type Db } from "../src/index.js";
 
@@ -52,7 +52,7 @@ export interface Harness {
   close: () => Promise<void>;
 }
 
-export async function startHarness(db?: Db): Promise<Harness> {
+export async function startHarness(db?: Db, overrides: Partial<Config> = {}): Promise<Harness> {
   // CI also runs these tests against a real Postgres service (SETTLE_TEST_DATABASE_URL).
   const url = process.env.SETTLE_TEST_DATABASE_URL;
   const ownsDb = !db;
@@ -61,7 +61,7 @@ export async function startHarness(db?: Db): Promise<Harness> {
   const chain = new FakeChain();
   // Generous limits: this shared app logs in many times; rate limiting has its own test.
   const limits = { authPerIp: { max: 10_000, windowMs: 60_000 }, verificationsPerAccount: { max: 10_000, windowMs: 60_000 } };
-  const { app, verifications } = buildApp({ db: database, chain, config, limits });
+  const { app, verifications } = buildApp({ db: database, chain, config: { ...config, ...overrides }, limits });
 
   const fixture = createServer((req, res) => {
     const r = fixtureResponse(req.method ?? "GET", req.url ?? "/");
@@ -140,5 +140,25 @@ export function as(h: Harness, token: string) {
   return {
     get: (url: string) => call("GET", url),
     post: (url: string, payload: unknown = {}, headers?: Record<string, string>) => call("POST", url, payload, headers),
+  };
+}
+
+/** What the escrow contract reports for a funded agreement (terms hash computed like the contract). */
+export function onchainFunded(state: import("@settle/domain").AgreementState): ContractAgreement {
+  const terms = toContractTerms(state.terms);
+  return {
+    terms,
+    terms_hash: computeOnchainTermsHash(terms),
+    status: "Funded",
+    accepted_by_worker: true,
+    funded_at_ms: Date.now(),
+    milestones: terms.milestones.map(() => ({
+      status: "Pending",
+      submission: null,
+      submission_count: 0,
+      allocated: false,
+      worker: { due: "0", pending: "0", paid: "0" },
+      client: { due: "0", pending: "0", paid: "0" },
+    })),
   };
 }

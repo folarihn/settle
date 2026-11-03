@@ -37,6 +37,8 @@ export const Config = z.object({
   enableFixture: z.coerce.boolean().default(false),
   /** Stable public HTTPS origin of this deployment, e.g. https://settle-demo.onrender.com. */
   publicUrl: z.string().url().optional(),
+  /** Base URL of a worker hosted on a sleep-on-idle plan; the API calls its /kick after queueing. */
+  workerWakeUrl: z.string().url().optional(),
   /** Trust X-Forwarded-For (set when running behind the host's load balancer). */
   trustProxy: z.coerce.boolean().default(false),
 });
@@ -72,6 +74,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env, role: "api" 
     // Render sets RENDER_EXTERNAL_URL to the service's stable https://<name>.onrender.com origin.
     publicUrl: env.SETTLE_PUBLIC_URL || env.RENDER_EXTERNAL_URL || undefined,
     trustProxy: flag(env.SETTLE_TRUST_PROXY),
+    workerWakeUrl: env.SETTLE_WORKER_WAKE_URL || undefined,
   });
   if (!parsed.success) {
     const missing = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
@@ -87,6 +90,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env, role: "api" 
   }
   if (config.publicUrl && new URL(config.publicUrl).protocol !== "https:") {
     throw new ConfigError("SETTLE_PUBLIC_URL must be https (the verifier only calls https targets)");
+  }
+  if (config.network === "testnet" && config.workerWakeUrl && new URL(config.workerWakeUrl).protocol !== "https:") {
+    throw new ConfigError("SETTLE_WORKER_WAKE_URL must be https");
   }
   if (role === "api") {
     // The internet-facing API must never hold the verifier seed. The only exception is the

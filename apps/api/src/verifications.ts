@@ -36,6 +36,8 @@ export class VerificationService {
     private readonly jobs: JobService,
     private readonly config: Config,
     private readonly now: () => number = Date.now,
+    /** Wakes a sleeping worker (hosted on a sleep-on-idle plan); optional. */
+    private readonly wake?: () => void,
   ) {}
 
   async request(p: Principal, jobId: string, milestoneId: string) {
@@ -73,6 +75,7 @@ export class VerificationService {
       }
       throw e;
     }
+    this.wake?.();
     return this.get(p, id);
   }
 
@@ -80,6 +83,8 @@ export class VerificationService {
     const row = await this.row(id);
     const state = await this.jobs.load(this.db, row.job_id);
     this.jobs.requireParticipant(state, p.accountId);
+    // Clients poll while a run is queued; keep nudging a worker that may have gone to sleep.
+    if (row.status === "QUEUED") this.wake?.();
     return this.toView(row, state);
   }
 

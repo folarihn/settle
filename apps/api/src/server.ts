@@ -12,6 +12,7 @@ import { ApiError, toErrorResponse } from "./errors.js";
 import { JobService } from "./jobs.js";
 import { LIMITS, RateLimiter, type Limits } from "./rate-limit.js";
 import { VerificationService } from "./verifications.js";
+import { workerWaker } from "./worker.js";
 
 export interface AppDeps {
   db: Db;
@@ -30,7 +31,7 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
   const app = Fastify({ logger, bodyLimit: 256 * 1024, trustProxy: config.trustProxy });
   const limiter = new RateLimiter(now);
   const jobs = new JobService(db, chain, config, now);
-  const verifications = new VerificationService(db, jobs, config, now);
+  const verifications = new VerificationService(db, jobs, config, now, config.workerWakeUrl ? workerWaker(config.workerWakeUrl) : undefined);
 
   app.setErrorHandler((err, req, reply) => {
     const { status, body } = toErrorResponse(err);

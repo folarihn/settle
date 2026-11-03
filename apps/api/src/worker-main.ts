@@ -4,7 +4,7 @@ import { configFromEnv } from "./config.js";
 import { createPgDb, migrate } from "./db.js";
 import { JobService } from "./jobs.js";
 import { VerificationService } from "./verifications.js";
-import { runWorkerLoop } from "./worker.js";
+import { runWorkerLoop, startWakeServer } from "./worker.js";
 
 /**
  * Verification worker: a separate process from the internet-facing API. It is the only
@@ -21,5 +21,7 @@ if (!config.databaseUrl) throw new Error("the standalone worker needs SETTLE_DAT
 const db = createPgDb(config.databaseUrl);
 await migrate(db);
 const jobs = new JobService(db, new RpcChainReader(config.rpcUrl, config.escrowContract), config);
+// When hosted as a web service (PORT is set), answer health checks and wake-up calls.
+if (process.env.PORT) startWakeServer(Number(process.env.PORT));
 console.log(`verification worker started for verifier key ${config.verifierPublicKey.slice(0, 12)}...`);
 await runWorkerLoop(new VerificationService(db, jobs, config), seed, { error: (o, msg) => console.error(msg, o) });

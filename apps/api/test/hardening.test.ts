@@ -56,3 +56,44 @@ describe("rate limiting and readiness", () => {
     await db.close();
   });
 });
+
+describe("waking a worker hosted on a sleep-on-idle plan", () => {
+  it("exposes only a health check and a no-data kick route", async () => {
+    const { startWakeServer } = await import("../src/index.js");
+    const server = startWakeServer(0);
+    await new Promise((r) => server.once("listening", r));
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    expect((await fetch(`${base}/healthz`)).status).toBe(200);
+    expect((await fetch(`${base}/kick`, { method: "POST" })).status).toBe(202);
+    expect((await fetch(`${base}/v1/jobs`)).status).toBe(404);
+    server.close();
+  });
+
+  it("kicks the worker when a verification is queued, throttled", async () => {
+    const { createServer } = await import("node:http");
+    const { as, jobInput, login, onchainFunded, WORKER } = await import("./harness.js");
+    let kicks = 0;
+    const worker = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/kick") kicks += 1;
+      res.writeHead(202).end();
+    });
+    await new Promise<void>((r) => worker.listen(0, "127.0.0.1", r));
+    const wakeUrl = `http://127.0.0.1:${(worker.address() as { port: number }).port}`;
+    const { startHarness } = await import("./harness.js");
+    const h = await startHarness(undefined, { workerWakeUrl: wakeUrl });
+    const client = as(h, await login(h, "client.testnet"));
+    const agent = as(h, await login(h, WORKER, "AGENT"));
+    const job = (await client.post("/v1/jobs", jobInput())).json();
+    await agent.post(`/v1/jobs/${job.id}/actions`, { type: "ACCEPT_TERMS", termsHash: job.state.termsHash });
+    h.chain.agreements.set(job.id, onchainFunded((await client.get(`/v1/jobs/${job.id}`)).json().job.state));
+    await client.post(`/v1/jobs/${job.id}/sync`);
+    await agent.post(`/v1/jobs/${job.id}/actions`, { type: "SUBMIT", milestoneId: "api", artifactHash: "c1", uri: `${h.fixtureOrigin}/broken` });
+    const queued = await agent.post(`/v1/jobs/${job.id}/milestones/api/verifications`);
+    expect(queued.statusCode).toBe(202);
+    await agent.get(`/v1/verifications/${queued.json().id}`); // polling within the throttle window
+    await new Promise((r) => setTimeout(r, 200));
+    expect(kicks).toBe(1);
+    await h.close();
+    worker.close();
+  });
+});

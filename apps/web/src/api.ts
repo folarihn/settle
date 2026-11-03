@@ -84,6 +84,7 @@ export interface PublicConfig {
   authRecipient: string;
   demoPlan: unknown;
   fixturePath: string | null;
+  workerWakeUrl: string | null;
 }
 
 export class ApiError extends Error {

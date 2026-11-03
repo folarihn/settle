@@ -46,6 +46,8 @@ export type Action = { type: string; milestoneId?: string } & Record<string, unk
 
 export class SettleAgent {
   private token: string | null = null;
+  private wakeUrl: string | null = null;
+  private lastWake = 0;
   private account: Account;
   private executor: Executor;
 
@@ -70,8 +72,9 @@ export class SettleAgent {
 
   /** Reads the API's public config and logs in with the agent's key. */
   static async connect(opts: SettleAgentOptions): Promise<SettleAgent> {
-    const config = await request<{ rpcUrl: string }>(opts.apiUrl, "GET", "/v1/config");
+    const config = await request<{ rpcUrl: string; workerWakeUrl?: string | null }>(opts.apiUrl, "GET", "/v1/config");
     const agent = new SettleAgent(opts, opts.rpcUrl ?? config.rpcUrl);
+    agent.wakeUrl = config.workerWakeUrl ?? null;
     await agent.login();
     return agent;
   }
@@ -146,12 +149,23 @@ export class SettleAgent {
   evidence(verificationId: string) {
     return this.call<{ evidence: unknown; matchesReport: boolean }>("GET", `/v1/verifications/${encodeURIComponent(verificationId)}/evidence`);
   }
+  /**
+   * The deployment's verifier may sleep when idle and only wakes for outside traffic, so the
+   * agent nudges it (at most every 10 s) while its verification is queued.
+   */
+  private wakeVerifier(): void {
+    if (!this.wakeUrl || Date.now() - this.lastWake < 10_000) return;
+    this.lastWake = Date.now();
+    fetch(`${this.wakeUrl.replace(/\/+$/, "")}/kick`, { method: "POST", body: "", signal: AbortSignal.timeout(90_000) }).catch(() => undefined);
+  }
+
   /** Polls until the verifier finishes. A timeout is an error, never a PASS. */
   async waitForVerification(verificationId: string, { timeoutMs = 60_000, intervalMs = 1000 } = {}): Promise<Verification> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const v = await this.getVerification(verificationId);
       if (v.status === "DONE" || v.status === "FAILED") return v;
+      if (v.status === "QUEUED") this.wakeVerifier();
       if (Date.now() > deadline) throw new Error(`verification ${verificationId} still ${v.status} after ${timeoutMs} ms`);
       await new Promise((r) => setTimeout(r, intervalMs));
     }

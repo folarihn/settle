@@ -103,6 +103,13 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
     fixturePath: config.enableFixture ? "/fixture" : null,
     /** Stable public HTTPS base of the demo fixture, for agents and judges. */
     fixtureBaseUrl: config.enableFixture && config.publicUrl ? `${config.publicUrl.replace(/\/+$/, "")}/fixture` : null,
+    /**
+     * Public wake-up URL of a verifier on a sleep-on-idle host. Render does not wake a sleeping
+     * free service for requests from its other services (they get 502), only for outside
+     * traffic, so clients (web app, agent SDK) also send POST {workerWakeUrl}/kick while a
+     * verification is queued. The route returns no data and does no work itself.
+     */
+    workerWakeUrl: config.workerWakeUrl ?? null,
   }));
 
   // ---- auth (identical for humans and agents) ----

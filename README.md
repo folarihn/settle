@@ -47,7 +47,7 @@
 
 - **Testnet only;** no mainnet funds.
 - **Wallets:** only MyNearWallet is wired up in the web app. Wallet sign-in has not been exercised by automated browser tests (the wallet pop-up needs a real person); the same NEP-413 login and every contract call are proven by the agent-SDK runs.
-- **Free tier:** Render services sleep after about 15 minutes idle (about 1 minute to wake). The Render Postgres database is on the free plan and **expires on 2026-12-03**.
+- **Free tier:** Render services sleep after about 15 minutes idle. A sleeping service takes about 25 seconds to wake for a page load. Render does not wake a sleeping free service for requests from its other services (it answers 502), so while a verification is queued, the judge's browser and the agent SDK wake the verifier from outside; the first verification after idle then takes about a minute. The Render Postgres database is on the free plan and **expires on 2026-12-03**. Paid plans (about $7/month per service) would remove all wake-up delays.
 - **Ordering:** the API records an action before the wallet signs it. If a wallet pop-up is cancelled, the page shows a divergence notice with a retry button; money always follows the onchain state.
 - **Verifier:** checks HTTP APIs only (one request per plan); it never runs submitted code.
 - **Contract upgradability:** the contract account is not locked, so whoever holds its key could deploy different code.

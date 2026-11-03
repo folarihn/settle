@@ -167,3 +167,47 @@ Everything on the deployment: API and web app at **https://settle-9ewd.onrender.
 | payout copy (client triggers; agent pays no gas) | [`meUW2ZvS5MmQpqVDFtkHm4FSxkjnpkwLeKdzs6d7WWJ`](https://testnet.nearblocks.io/txns/meUW2ZvS5MmQpqVDFtkHm4FSxkjnpkwLeKdzs6d7WWJ) |
 
 Independent check after the run (RPC, `final`): agreement `Completed`; the onchain reports are `Fail` for `commit-failing` (submission 1) and `Pass` for `commit-passing` (submission 2), both `SuccessValue`; payout logs show 0.3 NEAR to the worker for `api`, and 0.05 NEAR each to the worker and client for `copy`.
+
+## Run 4: first cold-start test (failed, then recovered and completed)
+
+Agreement `job_TvRzblF-zKFswc6B`, all through the public deployment. At 17:06 UTC Render reported **no instances** for both the API and the verifier (asleep for hours). The API woke on the first request in about 25 s. The verification was queued at 17:07:20 and the duplicate request was refused (`IN_FLIGHT`), but **the verifier did not wake**: Render showed no verifier instance and no verifier log lines for 4 minutes, despite the API's wake-up calls on queueing and on every status poll. The test was recorded as **FAIL**.
+
+Diagnosis: a direct `POST /kick` from outside Render woke the verifier in 22.8 s (worker started at 17:12:00), so the wake route works. The API's call was fire-and-forget with errors discarded, so its outcome was invisible. `c5ae744` added logging of every wake-up attempt. A second cold-start test (agreement `job_cjTrdj291IPOG-t2`, queued 17:31:05 with the verifier confirmed asleep) failed the same way, and the new logs showed the cause: every API wake-up got **HTTP 502 within about 100 ms**. Render does not wake a sleeping free service for requests from another Render service. A wake-up from outside Render woke it in 22.8 s. Fix in the next commit: the web app and the agent SDK send the wake-up from the client side while a verification is queued. The queued run was **not lost**: once the verifier was up it was processed (`DONE`, `FAIL`, submission 1) and relayed onchain; the agreement then completed normally.
+
+### Transactions
+
+| Step | Transaction |
+| --- | --- |
+| create_agreement (client) | [`DwCeNy6PvtxF8RDVQAkuKt7sZBkR6BmUej3BZ5tkQAqm`](https://testnet.nearblocks.io/txns/DwCeNy6PvtxF8RDVQAkuKt7sZBkR6BmUej3BZ5tkQAqm) |
+| accept_terms (agent worker) | [`SJyCprqt2T8V2VpDMQJixJYacnQ9i5qemkmMEqPH7MR`](https://testnet.nearblocks.io/txns/SJyCprqt2T8V2VpDMQJixJYacnQ9i5qemkmMEqPH7MR) |
+| fund (client) | [`5nLNviZ7UHCE3F86Uj2o7cYmW2wwbsitB4kNT3javr45`](https://testnet.nearblocks.io/txns/5nLNviZ7UHCE3F86Uj2o7cYmW2wwbsitB4kNT3javr45) |
+| submit failing: /fixture/broken (agent) | [`EN33kFynBwMuB5h4rE29tYLPoT3TJWoQSUFrxkjK2LKN`](https://testnet.nearblocks.io/txns/EN33kFynBwMuB5h4rE29tYLPoT3TJWoQSUFrxkjK2LKN) |
+| record_verification FAIL (agent relays the run that was stuck while the verifier slept) | [`5u1p6sDEmHLaVtvQPMVmWG8BXsT1ofAnWjLuxDLCUihN`](https://testnet.nearblocks.io/txns/5u1p6sDEmHLaVtvQPMVmWG8BXsT1ofAnWjLuxDLCUihN) |
+| submit passing: /fixture/fixed (agent) | [`2Kc64MvRZBCvaeXA6nPuNp9A8x75CbGbxTZiJoiXcBi6`](https://testnet.nearblocks.io/txns/2Kc64MvRZBCvaeXA6nPuNp9A8x75CbGbxTZiJoiXcBi6) |
+| record_verification PASS (agent relays signed report) | [`DHcxvDk6AZve5uGZSt45574yk3ef3uQvRRBBsduv6cMn`](https://testnet.nearblocks.io/txns/DHcxvDk6AZve5uGZSt45574yk3ef3uQvRRBBsduv6cMn) |
+| finalize_challenge (agent) | [`4g8pEtrJPX8Hx7p4dmUVFux8FUnop7BoLoFM4usSgrJj`](https://testnet.nearblocks.io/txns/4g8pEtrJPX8Hx7p4dmUVFux8FUnop7BoLoFM4usSgrJj) |
+| payout api (client triggers; agent pays no gas) | [`4e8VSkkvgh37f7JBep3vQKicWqmzkQHTZJgrfphsN4yC`](https://testnet.nearblocks.io/txns/4e8VSkkvgh37f7JBep3vQKicWqmzkQHTZJgrfphsN4yC) |
+| submit design v1 (agent) | [`CjPWt27vBzjYuFkJUyxRLtQGA38s3YEVbJPwbJXHTWWv`](https://testnet.nearblocks.io/txns/CjPWt27vBzjYuFkJUyxRLtQGA38s3YEVbJPwbJXHTWWv) |
+| request_revision (client) | [`2iunK1Yhasz8xz65GNhv8FZo2CRq2GF5uBajkhUqhwcY`](https://testnet.nearblocks.io/txns/2iunK1Yhasz8xz65GNhv8FZo2CRq2GF5uBajkhUqhwcY) |
+| submit design v2 (agent) | [`J6kidJr2PQTZLhuDKryBoSvqT3DYLGztP9mwPUaVBsKw`](https://testnet.nearblocks.io/txns/J6kidJr2PQTZLhuDKryBoSvqT3DYLGztP9mwPUaVBsKw) |
+| approve (client) | [`DAXPUwwaMQqQJ7xddwkQf7CEkWaBu4gf3Ho9sD4tV2VC`](https://testnet.nearblocks.io/txns/DAXPUwwaMQqQJ7xddwkQf7CEkWaBu4gf3Ho9sD4tV2VC) |
+| payout design (client triggers; agent pays no gas) | [`7NTNwy9ENk47JBbkSjCPha8joFrcs6Xse5Vz9gwvDCbk`](https://testnet.nearblocks.io/txns/7NTNwy9ENk47JBbkSjCPha8joFrcs6Xse5Vz9gwvDCbk) |
+| submit copy v1 (agent) | [`FMpoRYJDveetSyouB7rsVCQmKP1j6o1CD75sDwSHyJYp`](https://testnet.nearblocks.io/txns/FMpoRYJDveetSyouB7rsVCQmKP1j6o1CD75sDwSHyJYp) |
+| propose_settlement 50% (agent) | [`Dtv9799NGs1WKMzaP1re2JFQp6CZXijk5rN8mnB2JhDS`](https://testnet.nearblocks.io/txns/Dtv9799NGs1WKMzaP1re2JFQp6CZXijk5rN8mnB2JhDS) |
+| accept_settlement (client) | [`BgHPX1BGwzKCDNN11GZAkZJHfUPYEfM28b8cysS9mNHV`](https://testnet.nearblocks.io/txns/BgHPX1BGwzKCDNN11GZAkZJHfUPYEfM28b8cysS9mNHV) |
+| payout copy (client triggers; agent pays no gas) | [`6EEGEgqAoed47EQD5BvTLM7RF7mAQC9XXeaYffLbEkxT`](https://testnet.nearblocks.io/txns/6EEGEgqAoed47EQD5BvTLM7RF7mAQC9XXeaYffLbEkxT) |
+
+### Checks after resuming
+
+| Check | Result |
+| --- | --- |
+| resumed agreement is in its challenge window after a real PASS (onchain status VerifiedPendingChallenge) | ✅ |
+| agent balance rose by exactly the API milestone (0.3 NEAR) | ✅ |
+| API milestone is Paid onchain | ✅ |
+| a second payout of the same milestone is rejected onchain (INVALID_TRANSITION) | ✅ |
+| revision keeps design funds locked | ✅ |
+| approval paid the full design milestone (0.1 NEAR) | ✅ |
+| partial settlement paid the agent exactly the agreed half (0.05 NEAR) | ✅ |
+| client refund of the other half confirmed onchain (worker paid 0.05 NEAR, client refunded 0.05 NEAR) | ✅ |
+| agreement Completed onchain and offchain | ✅ |
+| no divergence between offchain record and contract | ✅ |

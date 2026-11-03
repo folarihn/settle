@@ -35,7 +35,7 @@ export interface WakeLog {
 
 /**
  * Returns a throttled, fire-and-forget call to the worker's /kick route (at most one attempt
- * per `everyMs`). Outcomes are logged; a failed attempt is retried a few times with backoff,
+ * per `everyMs`). Outcomes are logged; a network failure is retried a few times with backoff,
  * and queued jobs stay queued meanwhile, so nothing is lost.
  */
 export function workerWaker(baseUrl: string, log?: WakeLog, everyMs = 10_000, now: () => number = Date.now): () => void {
@@ -46,8 +46,9 @@ export function workerWaker(baseUrl: string, log?: WakeLog, everyMs = 10_000, no
     try {
       // A sleeping free instance can take about a minute to start.
       const res = await fetch(url, { method: "POST", body: "", signal: AbortSignal.timeout(90_000) });
+      // Render answers service-to-service calls to a sleeping free service with 502 and does
+      // not wake it; clients (web app, agent SDK) wake it from outside instead.
       log?.info({ status: res.status, ms: now() - started, attempt: n }, "worker wake-up answered");
-      if (res.status >= 500 && n < 3) setTimeout(() => void attempt(n + 1), 5000 * n);
     } catch (e) {
       log?.warn({ err: e instanceof Error ? e.message : String(e), ms: now() - started, attempt: n }, "worker wake-up failed");
       if (n < 3) setTimeout(() => void attempt(n + 1), 5000 * n);

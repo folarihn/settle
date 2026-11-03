@@ -45,9 +45,13 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
   // While a verification is queued or running, poll for its result.
   useEffect(() => {
     if (!verifications.some((v) => v.status === "QUEUED" || v.status === "RUNNING")) return;
-    const t = setInterval(() => load().catch(() => undefined), 2000);
+    wakeVerifier(session.config.workerWakeUrl);
+    const t = setInterval(() => {
+      wakeVerifier(session.config.workerWakeUrl);
+      load().catch(() => undefined);
+    }, 2000);
     return () => clearInterval(t);
-  }, [verifications, load]);
+  }, [verifications, load, session.config.workerWakeUrl]);
 
   const recordTx = (label: string, hash: string) => {
     setTxs((prev) => {
@@ -426,6 +430,18 @@ function MilestoneCard({ m, terms, onchainStatus, job, verifications, busy, act,
       {evidence !== null && <EvidenceView data={evidence} onClose={() => setEvidence(null)} />}
     </section>
   );
+}
+
+let lastWake = 0;
+/**
+ * The verifier sleeps when idle on free hosting and only wakes for traffic from outside the
+ * host, so the browser nudges it while a verification is queued (at most every 10 s).
+ * `no-cors`: the response is not needed, and the route returns no data anyway.
+ */
+function wakeVerifier(url: string | null) {
+  if (!url || Date.now() - lastWake < 10_000) return;
+  lastWake = Date.now();
+  fetch(`${url.replace(/\/+$/, "")}/kick`, { method: "POST", mode: "no-cors" }).catch(() => undefined);
 }
 
 const STATUS_TEXT: Record<string, string> = {

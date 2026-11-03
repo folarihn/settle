@@ -6,7 +6,7 @@ Everything shown is the live deployment on NEAR testnet; nothing is simulated. U
 | --- | --- | --- | --- |
 | 1 | 0:00 | https://settle-9ewd.onrender.com first screen ([screenshot](screenshots/01-landing-desktop.jpg)) | "Freelancers and AI agents get paid only when work provably meets terms agreed up front. Money sits in a NEAR escrow contract." |
 | 2 | 0:20 | Click the `testnet · settle-escrow-14f651.testnet` link in the header (nearblocks) | "This is the real contract on testnet." |
-| 3 | 0:30 | Client: **Connect a testnet wallet** → MyNearWallet → **Sign in as …** | "Signing in signs a message; no transaction." |
+| 3 | 0:30 | Client: **Connect a testnet wallet** → Meteor Wallet (testnet) → **Sign in as …** | "Signing in signs a message; no transaction." |
 | 4 | 0:45 | Client: **Create agreement** with the defaults → approve `create_agreement` | "Two milestones: an automated API check and a human-reviewed design, locked by hash before funding." |
 | 5 | 1:05 | Worker profile: **Accept terms**; Client: **Fund escrow (0.5 NEAR)** | "The worker accepts the exact terms; the client deposits exactly the total." |
 | 6 | 1:25 | Worker: submit `demo-broken` / `…/fixture/broken` → **Run verification** → **FAIL** → **Evidence** | "An independent verifier called the API: `$.status` was `degraded`. FAIL releases nothing; there is no pay-out button." |

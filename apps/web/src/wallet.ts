@@ -1,5 +1,6 @@
 import { setupWalletSelector, type WalletSelector } from "@near-wallet-selector/core";
 import { setupModal, type WalletSelectorModal } from "@near-wallet-selector/modal-ui";
+import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
 import { setupMyNearWallet } from "@near-wallet-selector/my-near-wallet";
 import { actionCreators } from "@near-js/transactions";
 import "@near-wallet-selector/modal-ui/styles.css";
@@ -17,7 +18,8 @@ export interface Wallet {
 export async function initWallet(config: PublicConfig): Promise<Wallet> {
   const selector = await setupWalletSelector({
     network: config.network === "testnet" ? "testnet" : "mainnet",
-    modules: [setupMyNearWallet()],
+    // Meteor first: MyNearWallet no longer creates new accounts.
+    modules: [setupMeteorWallet(), setupMyNearWallet()],
   });
   const modal = setupModal(selector, { contractId: config.escrowContract });
   return { selector, modal };

@@ -23,13 +23,13 @@
 ### Before you start (5 minutes, once)
 
 1. Use two browser profiles (or two browsers): one for the **client**, one for the **worker**.
-2. In each, create a NEAR **testnet** account at https://testnet.mynearwallet.com, and get testnet NEAR from the faucet at https://near-faucet.io. The client needs about 1 NEAR (0.5 NEAR escrow, a 0.2 NEAR storage deposit that is mostly refunded, and gas). The worker needs a little for gas.
-3. Allow pop-ups for `settle-9ewd.onrender.com`. MyNearWallet opens a pop-up for every signature.
+2. In each, create a NEAR **testnet** account in Meteor Wallet (https://wallet.meteorwallet.app, switched to *testnet*; MyNearWallet no longer creates new accounts), and get testnet NEAR from the faucet at https://near-faucet.io. The client needs about 1 NEAR (0.5 NEAR escrow, a 0.2 NEAR storage deposit that is mostly refunded, and gas). The worker needs a little for gas.
+3. Allow pop-ups for `settle-9ewd.onrender.com`. The wallet opens a pop-up for every signature.
 4. Free hosting: if nobody has used the site for about 15 minutes, the first page load and the first verification each take about a minute while the service wakes up.
 
 ### Judge path (about 15 minutes)
 
-1. Open https://settle-9ewd.onrender.com, click **Connect a testnet wallet** → **MyNearWallet** and approve in the pop-up, then click **Sign in as …**. Signing in signs a message only; it does not send a transaction.
+1. Open https://settle-9ewd.onrender.com, click **Connect a testnet wallet** → **Meteor Wallet** (or MyNearWallet for an existing account) and approve in the pop-up, then click **Sign in as …**. Signing in signs a message only; it does not send a transaction.
 2. **Client:** click **Create agreement**, enter the worker's testnet account and keep the defaults: an automated API milestone (0.35 NEAR) with the demo verification plan, and a human-review design milestone (0.15 NEAR, 2 revisions, 0.075 NEAR protected floor). Click **Create agreement (signs create_agreement)** and approve.
 3. **Worker:** open the agreement from **Your agreements** and click **Accept terms** (signs `accept_terms`).
 4. **Client:** click **Fund escrow (0.5 NEAR)**. The onchain status becomes `Funded`; the transaction appears under *Your transactions* with a nearblocks link.
@@ -46,7 +46,7 @@
 ### Known limitations
 
 - **Testnet only;** no mainnet funds.
-- **Wallets:** only MyNearWallet is wired up in the web app. Wallet sign-in has not been exercised by automated browser tests (the wallet pop-up needs a real person); the same NEP-413 login and every contract call are proven by the agent-SDK runs.
+- **Wallets:** Meteor Wallet and MyNearWallet are wired up in the web app. Wallet sign-in has not been exercised by automated browser tests (the wallet pop-up needs a real person); the same NEP-413 login and every contract call are proven by the agent-SDK runs.
 - **Free tier:** Render services sleep after about 15 minutes idle. A sleeping service takes about 25 seconds to wake for a page load. Render does not wake a sleeping free service for requests from its other services (it answers 502), so while a verification is queued, the judge's browser and the agent SDK wake the verifier from outside; the first verification after idle then takes about a minute. The Render Postgres database is on the free plan and **expires on 2026-12-03**. Paid plans (about $7/month per service) would remove all wake-up delays.
 - **Ordering:** the API records an action before the wallet signs it. If a wallet pop-up is cancelled, the page shows a divergence notice with a retry button; money always follows the onchain state.
 - **Verifier:** checks HTTP APIs only (one request per plan); it never runs submitted code.

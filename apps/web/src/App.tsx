@@ -143,11 +143,11 @@ function Intro(props: { config: PublicConfig | null; wallet: Wallet | null; acco
         </div>
         <p className="muted small">
           Signing in only signs a message; it sends no transaction. Every payment step is a transaction you approve in your wallet. New to NEAR
-          testnet? Create an account at{" "}
-          <a href="https://testnet.mynearwallet.com" target="_blank" rel="noreferrer">
-            testnet.mynearwallet.com
+          testnet? Create a <strong>testnet</strong> account in{" "}
+          <a href="https://wallet.meteorwallet.app" target="_blank" rel="noreferrer">
+            Meteor Wallet
           </a>{" "}
-          and get free testnet NEAR from the{" "}
+          (switch it to testnet) and get free testnet NEAR from the{" "}
           <a href="https://near-faucet.io" target="_blank" rel="noreferrer">
             NEAR testnet faucet
           </a>

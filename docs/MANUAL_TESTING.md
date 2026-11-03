@@ -6,7 +6,7 @@ Live deployment: `<app>` = **https://settle-9ewd.onrender.com** (contract `settl
 
 ## 1. Sign in and create a job (client)
 
-1. Open `<app>` → **Connect a testnet wallet** → MyNearWallet (approve in the pop-up) → **Sign in as `<you>.testnet`**. The wallet popup asks you to sign a message. Expected: your account appears in the header. No transaction is sent.
+1. Open `<app>` → **Connect a testnet wallet** → Meteor Wallet, on testnet (approve in the pop-up) → **Sign in as `<you>.testnet`**. The wallet popup asks you to sign a message. Expected: your account appears in the header. No transaction is sent.
 2. **Create agreement**. Enter the worker's account. Keep the defaults: API milestone 0.35 NEAR with the demo plan; design milestone 0.15 NEAR, 2 revisions, 0.075 NEAR floor; challenge window 120 s.
 3. **Create agreement (signs create_agreement)**, then approve in the wallet (about 0.2 NEAR attached; the unused storage deposit is refunded). Expected: the job page shows onchain status `Draft`, and the transaction appears under *Your transactions* with a nearblocks link.
 

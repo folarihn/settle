@@ -63,7 +63,7 @@ Render dashboard → **New → Blueprint** → select this repository and branch
 | Resource | Runs | Holds |
 | --- | --- | --- |
 | `settle` (web service) | `node apps/api/dist/main.js`: API, web app, demo fixture at `/fixture/...` | No keys. Health check `/healthz` |
-| `settle-verifier` (background worker) | `node apps/api/dist/worker-main.js` | The only holder of `SETTLE_VERIFIER_SEED`; outbound HTTPS only |
+| `settle-verifier` (free web service) | `node apps/api/dist/worker-main.js`: verification worker; exposes only `/healthz` and `POST /kick`, which the API calls to wake it | The only holder of `SETTLE_VERIFIER_SEED` |
 | `settle-db` (Postgres 16) | the database for both, wired via `fromDatabase` | Data persists across restarts and deploys |
 
 When asked for the `sync: false` values, enter:
@@ -76,7 +76,7 @@ When asked for the `sync: false` values, enter:
 | `SETTLE_RESOLVER_ACCOUNT` | the testnet account that will rule on disputes (sign in with it in the web app) |
 | `SETTLE_VERIFIER_SEED` (worker only) | `seedHex` from Part B |
 
-Service sizes are a cost choice; the Blueprint leaves Render's defaults. Render has no free background worker. Render sets `RENDER_EXTERNAL_URL` (`https://<service>.onrender.com`), which the API uses as its stable public HTTPS address. The demo fixture is therefore at `https://<service>.onrender.com/fixture/broken` and `/fixture/fixed`, and `/v1/config` reports it as `fixtureBaseUrl`.
+All services use Render's free plans. Free services sleep when idle, so the API wakes the verifier (`SETTLE_WORKER_WAKE_URL`) whenever a verification is queued; the first result after idle takes about a minute. Render sets `RENDER_EXTERNAL_URL` (`https://<service>.onrender.com`), which the API uses as its stable public HTTPS address. The demo fixture is therefore at `https://<service>.onrender.com/fixture/broken` and `/fixture/fixed`, and `/v1/config` reports it as `fixtureBaseUrl`.
 
 After the first deploy, open `https://<service>.onrender.com/readyz`. It must return `{"ok":true,"checks":{"database":"ok","contract":"ok"}}`. Anything else names the failing dependency.
 

@@ -9,7 +9,8 @@
  *    "verifierAccount": "...", "resolverAccount": "...", "verifierSeed": "<64 hex>",
  *    "apiUrl"?: "https://<deployment>", "workerDatabaseUrl"?: "postgres://..."}
  * With apiUrl, the parties use that deployed API and its hosted demo fixture (/fixture/broken
- * then /fixture/fixed), and this process acts as a verification worker on workerDatabaseUrl.
+ * then /fixture/fixed). With workerDatabaseUrl this process acts as the verification worker;
+ * without it, the deployment's own hosted worker does the verifying and this script waits.
  * Without it, a local API is started and a public GitHub API endpoint is used as the target.
  * "resumeAgreementId" continues an agreement (with the same milestones) from its challenge
  * window: finalize, payout, creative revision/approval and partial settlement. It needs no
@@ -66,7 +67,8 @@ const config = configFromEnv(
 const live = Boolean(secrets.apiUrl);
 const resume = secrets.resumeAgreementId ?? null;
 const chain = new RpcChainReader(RPC, config.escrowContract);
-const db = resume ? null : live ? createPgDb(secrets.workerDatabaseUrl) : createPgliteDb();
+const hostedWorker = live && !secrets.workerDatabaseUrl;
+const db = resume || hostedWorker ? null : live ? createPgDb(secrets.workerDatabaseUrl) : createPgliteDb();
 if (db) await migrate(db);
 let app = null;
 let verifications;
@@ -79,9 +81,9 @@ if (live) {
   await app.listen({ port: 0, host: "127.0.0.1" });
   apiUrl = `http://127.0.0.1:${app.server.address().port}`;
 }
-const runVerifier = () => drainQueue(verifications, { seedHex: secrets.verifierSeed });
+const runVerifier = async () => (verifications ? drainQueue(verifications, { seedHex: secrets.verifierSeed }) : 0);
 
-const report = { contract: secrets.contract, apiUrl: live ? apiUrl : "local (not exposed)", startedAt: new Date().toISOString(), txs: [], checks: [] };
+const report = { contract: secrets.contract, apiUrl: live ? apiUrl : "local (not exposed)", worker: hostedWorker ? "hosted" : "local", startedAt: new Date().toISOString(), txs: [], checks: [] };
 const tx = (step, hash) => {
   report.txs.push({ step, hash, explorer: `https://testnet.nearblocks.io/txns/${hash}` });
   log(`tx ${step}: ${hash}`);
@@ -151,9 +153,13 @@ try {
 
   const verify = async (label, uri) => {
     tx(`submit ${label} (agent)`, (await agent.actOnChain(id, { type: "SUBMIT", milestoneId: "api", artifactHash: `commit-${label}`, uri })).txHash);
+    const queuedAt = Date.now();
     const queued = await agent.requestVerification(id, "api");
     await runVerifier();
-    const done = await agent.getVerification(queued.id);
+    const done = hostedWorker
+      ? await agent.waitForVerification(queued.id, { timeoutMs: 240_000, intervalMs: 3000 })
+      : await agent.getVerification(queued.id);
+    if (hostedWorker) log(`hosted worker finished ${done.outcome} ${Math.round((Date.now() - queuedAt) / 1000)} s after queueing`);
     const ev = await agent.evidence(queued.id);
     tx(`record_verification ${done.outcome} (agent relays signed report)`, await agent.execute(done.contractCall));
     return { done, ev };

@@ -1,9 +1,9 @@
 # Render Blueprint for the SETTLE testnet demo (Dashboard -> New -> Blueprint -> this repo).
-# One web service (API + web app + demo fixture, no keys), one background worker (the only
+# One web service (API + web app + demo fixture, no keys), one verifier service (the only
 # holder of the verifier seed) and one managed Postgres. Values marked `sync: false` are
 # entered in the Render dashboard when the Blueprint is created; they are never in git.
-# No `plan` is set, so Render's current defaults apply; choose sizes (cost) in the dashboard.
-# A background worker is not available on Render's free tier.
+# Everything here runs on Render's free plans. Free web services sleep after ~15 minutes
+# idle and take about a minute to wake; free Postgres expires after 30 days.
 
 envVarGroups:
   - name: settle-shared
@@ -24,6 +24,7 @@ services:
   - type: web
     name: settle
     runtime: node
+    plan: free
     branch: docs/settle-build-blueprint
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
     startCommand: node apps/api/dist/main.js
@@ -40,13 +41,20 @@ services:
         value: "1"
       - key: SETTLE_TRUST_PROXY
         value: "1"
+      # The verifier service's public URL (Render assigns it; this deployment's is below).
+      - key: SETTLE_WORKER_WAKE_URL
+        value: https://settle-verifier.onrender.com
 
-  - type: worker
+  # The verifier runs as its own free web service: it sleeps when idle and the API wakes it
+  # (POST /kick) when a verification is queued. It is the only holder of the verifier seed.
+  - type: web
     name: settle-verifier
     runtime: node
+    plan: free
     branch: docs/settle-build-blueprint
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
     startCommand: node apps/api/dist/worker-main.js
+    healthCheckPath: /healthz
     envVars:
       - fromGroup: settle-shared
       - key: SETTLE_DATABASE_URL
@@ -58,4 +66,5 @@ services:
 
 databases:
   - name: settle-db
+    plan: free
     postgresMajorVersion: "16"

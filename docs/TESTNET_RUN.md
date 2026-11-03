@@ -115,3 +115,55 @@ The Render verification worker could not be created yet (Render requires a payme
 | payout copy (client triggers; agent pays no gas) | [`DCLFuiMvrdGouvLtY8WJWuVBV7kidayZHYha3qViChA2`](https://testnet.nearblocks.io/txns/DCLFuiMvrdGouvLtY8WJWuVBV7kidayZHYha3qViChA2) |
 
 Independent check after the run (RPC, `final`): agreement `Completed`; the onchain reports are `Fail` for `commit-failing` (submission 1) and `Pass` for `commit-passing` (submission 2), both `SuccessValue`; worker paid 0.3 + 0.1 + 0.05 NEAR, client refunded 0.05 NEAR.
+
+## Run 3: fully hosted (the recommended evidence)
+
+Everything on the deployment: API and web app at **https://settle-9ewd.onrender.com**, the verifier on its own Render service **https://settle-verifier.onrender.com** (the only holder of the verifier seed; free plan, woken by the API when a verification is queued), Postgres on Render. Plan: the demo plan. Targets: the hosted fixture `/fixture/broken` then `/fixture/fixed`. Agreement `job_XuOByu9_flTyvHjn`. The hosted worker returned each result about 4 s after queueing (it was already awake; a cold start takes about a minute).
+
+### Checks
+
+| Check | Result |
+| --- | --- |
+| contract terms hash equals the agreed terms | ✅ |
+| offchain mirror shows FUNDED after the onchain fund | ✅ |
+| escrow holds exactly the total (0.5 NEAR) | ✅ |
+| failing endpoint produced FAIL ($.status == "ok": got "degraded") | ✅ |
+| evidence matches the signed report | ✅ |
+| FAIL released nothing onchain (onchain status Pending) | ✅ |
+| passing endpoint produced PASS (submission #2) | ✅ |
+| PASS opens the challenge window, nothing payable yet | ✅ |
+| finalizing inside the challenge window is refused (DEADLINE) | ✅ |
+| agent balance rose by exactly the API milestone (0.3 NEAR) | ✅ |
+| API milestone is Paid onchain | ✅ |
+| a second payout of the same milestone is rejected onchain (INVALID_TRANSITION) | ✅ |
+| revision keeps design funds locked | ✅ |
+| approval paid the full design milestone (0.1 NEAR) | ✅ |
+| partial settlement paid the agent exactly the agreed half (0.05 NEAR) | ✅ |
+| client refund of the other half confirmed onchain (worker paid 0.05 NEAR, client refunded 0.05 NEAR) | ✅ |
+| agreement Completed onchain and offchain | ✅ |
+| no divergence between offchain record and contract | ✅ |
+
+### Transactions
+
+| Step | Transaction |
+| --- | --- |
+| create_agreement (client) | [`9uaHYpsRdnN9N23hmfxurbhL35y5pz5xR8wHkLwDs6D`](https://testnet.nearblocks.io/txns/9uaHYpsRdnN9N23hmfxurbhL35y5pz5xR8wHkLwDs6D) |
+| accept_terms (agent worker) | [`AZYyoVbszB5sWBFvdktn5qMbhNqUgahkt9nesdmSSoyj`](https://testnet.nearblocks.io/txns/AZYyoVbszB5sWBFvdktn5qMbhNqUgahkt9nesdmSSoyj) |
+| fund (client) | [`As3X2zGWoBxigTzZCjPYDiUAKYiJLQKkDt9PwMQfupkY`](https://testnet.nearblocks.io/txns/As3X2zGWoBxigTzZCjPYDiUAKYiJLQKkDt9PwMQfupkY) |
+| submit failing (agent) | [`KVucRtBAz4uyyrk5N4r5d1NDDCKKcZGX4Z574UPDBqj`](https://testnet.nearblocks.io/txns/KVucRtBAz4uyyrk5N4r5d1NDDCKKcZGX4Z574UPDBqj) |
+| record_verification FAIL (agent relays signed report) | [`3iZ1wY2qFpVjp5WExr2AGBsmeQZV3CGa8PG2266JELX1`](https://testnet.nearblocks.io/txns/3iZ1wY2qFpVjp5WExr2AGBsmeQZV3CGa8PG2266JELX1) |
+| submit passing (agent) | [`Dxrf1QtTwNLVQJAyaHJxjMEMD3g9P7EbEdvdfYCXgfFQ`](https://testnet.nearblocks.io/txns/Dxrf1QtTwNLVQJAyaHJxjMEMD3g9P7EbEdvdfYCXgfFQ) |
+| record_verification PASS (agent relays signed report) | [`3y7GvVBjg2DoAP3LdAhkmd4Rxr2Zn2Js5LqZQtkuoiSp`](https://testnet.nearblocks.io/txns/3y7GvVBjg2DoAP3LdAhkmd4Rxr2Zn2Js5LqZQtkuoiSp) |
+| finalize_challenge (agent) | [`AA8YoGXF8QbYpe8SZSew96wiD23uEshASYzHZr5xFL9c`](https://testnet.nearblocks.io/txns/AA8YoGXF8QbYpe8SZSew96wiD23uEshASYzHZr5xFL9c) |
+| payout api (client triggers; agent pays no gas) | [`DSybJMn5UXoucFtgRVMimAcWsLTWP7Vx99dkr8JEBpfj`](https://testnet.nearblocks.io/txns/DSybJMn5UXoucFtgRVMimAcWsLTWP7Vx99dkr8JEBpfj) |
+| submit design v1 (agent) | [`XT4qcn5FF8DpBomrXKCMbST9yceiq3dbA6cWKtPmDNT`](https://testnet.nearblocks.io/txns/XT4qcn5FF8DpBomrXKCMbST9yceiq3dbA6cWKtPmDNT) |
+| request_revision (client) | [`4mNrFgtw4dDH2bCpQrVHXAZNW5GJzfosFgapieg8XMcu`](https://testnet.nearblocks.io/txns/4mNrFgtw4dDH2bCpQrVHXAZNW5GJzfosFgapieg8XMcu) |
+| submit design v2 (agent) | [`5nJbpyU6CNt8ktQtfJ5LxnT1vQP5T5VhrXCGrTzeoCvi`](https://testnet.nearblocks.io/txns/5nJbpyU6CNt8ktQtfJ5LxnT1vQP5T5VhrXCGrTzeoCvi) |
+| approve (client) | [`DhTLouERb2to4U5rJtucekbWMrpFi1iw7DiUgc9Z4e16`](https://testnet.nearblocks.io/txns/DhTLouERb2to4U5rJtucekbWMrpFi1iw7DiUgc9Z4e16) |
+| payout design (client triggers; agent pays no gas) | [`3kiVYjqrLVpyvUbiriUJ5hKF9LUerhGgk9o1jg6XgijG`](https://testnet.nearblocks.io/txns/3kiVYjqrLVpyvUbiriUJ5hKF9LUerhGgk9o1jg6XgijG) |
+| submit copy v1 (agent) | [`3Gr8NGb3JDQzwKCM5yfYhCrM4JLX1zMETXMtFctjQJ8m`](https://testnet.nearblocks.io/txns/3Gr8NGb3JDQzwKCM5yfYhCrM4JLX1zMETXMtFctjQJ8m) |
+| propose_settlement 50% (agent) | [`2GLgcrYQLa9ThL1bWPjvyLfuTiptSJkHhq253qae2DZg`](https://testnet.nearblocks.io/txns/2GLgcrYQLa9ThL1bWPjvyLfuTiptSJkHhq253qae2DZg) |
+| accept_settlement (client) | [`29jL9U7ToW74CznZ7avto8Eoj4Pfz3h9WyQtvJ5NhwYG`](https://testnet.nearblocks.io/txns/29jL9U7ToW74CznZ7avto8Eoj4Pfz3h9WyQtvJ5NhwYG) |
+| payout copy (client triggers; agent pays no gas) | [`meUW2ZvS5MmQpqVDFtkHm4FSxkjnpkwLeKdzs6d7WWJ`](https://testnet.nearblocks.io/txns/meUW2ZvS5MmQpqVDFtkHm4FSxkjnpkwLeKdzs6d7WWJ) |
+
+Independent check after the run (RPC, `final`): agreement `Completed`; the onchain reports are `Fail` for `commit-failing` (submission 1) and `Pass` for `commit-passing` (submission 2), both `SuccessValue`; payout logs show 0.3 NEAR to the worker for `api`, and 0.05 NEAR each to the worker and client for `copy`.

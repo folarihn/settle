@@ -28,15 +28,35 @@ export function startWakeServer(port: number): Server {
   return server;
 }
 
-/** Returns a throttled fire-and-forget call to the worker's /kick route (at most once per `everyMs`). */
-export function workerWaker(baseUrl: string, everyMs = 10_000, now: () => number = Date.now): () => void {
+export interface WakeLog {
+  info: (o: object, msg: string) => void;
+  warn: (o: object, msg: string) => void;
+}
+
+/**
+ * Returns a throttled, fire-and-forget call to the worker's /kick route (at most one attempt
+ * per `everyMs`). Outcomes are logged; a failed attempt is retried a few times with backoff,
+ * and queued jobs stay queued meanwhile, so nothing is lost.
+ */
+export function workerWaker(baseUrl: string, log?: WakeLog, everyMs = 10_000, now: () => number = Date.now): () => void {
   let last = -Infinity;
   const url = `${baseUrl.replace(/\/+$/, "")}/kick`;
+  const attempt = async (n: number): Promise<void> => {
+    const started = now();
+    try {
+      // A sleeping free instance can take about a minute to start.
+      const res = await fetch(url, { method: "POST", body: "", signal: AbortSignal.timeout(90_000) });
+      log?.info({ status: res.status, ms: now() - started, attempt: n }, "worker wake-up answered");
+      if (res.status >= 500 && n < 3) setTimeout(() => void attempt(n + 1), 5000 * n);
+    } catch (e) {
+      log?.warn({ err: e instanceof Error ? e.message : String(e), ms: now() - started, attempt: n }, "worker wake-up failed");
+      if (n < 3) setTimeout(() => void attempt(n + 1), 5000 * n);
+    }
+  };
   return () => {
     if (now() - last < everyMs) return;
     last = now();
-    // A sleeping free instance can take about a minute to start; never block the caller.
-    fetch(url, { method: "POST", signal: AbortSignal.timeout(90_000) }).catch(() => undefined);
+    void attempt(1);
   };
 }
 

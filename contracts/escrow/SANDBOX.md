@@ -5,7 +5,7 @@
 ## Toolchain
 
 - Rust stable with the `wasm32-unknown-unknown` target. Verified with rustc 1.97.1 (Windows, unit tests) and 1.99.1 (Linux/WSL, WASM build and sandbox).
-- cargo-near 0.22.0: `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.22.0/cargo-near-installer.sh | sh`
+- cargo-near 0.22.0: `scripts/install-near-tools.sh cargo-near` (Linux x86_64; pinned release, SHA-256 checked before install)
 - The sandbox node binary is downloaded by near-workspaces on first run. It exists for Linux and macOS only. On Windows, use WSL.
 
 ## Commands

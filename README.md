@@ -2,7 +2,7 @@
 
 **Verifiable work agreements and fair payments for humans and AI agents.**
 
-> Status: Phases 0–3 are implemented and tested. That covers the agreement engine, the NEAR escrow contract (unit tests plus real local-sandbox tests), the signed HTTP verifier, the API with Postgres, the web app, the agent SDK and the demo fixture API. **Nothing is deployed yet**: no live URL, no testnet contract, no onchain transaction to show. Deployment steps are in [docs/DEPLOY_TESTNET.md](docs/DEPLOY_TESTNET.md).
+> Status: Phases 0–3 are implemented and tested. That covers the agreement engine, the NEAR escrow contract (unit tests plus real local-sandbox tests), the signed HTTP verifier, the API with Postgres, the web app, the agent SDK and the demo fixture API. **Nothing is deployed yet**: no live URL, no testnet contract, no onchain transaction to show. Deployment is prepared (hardened deploy workflow, Render Blueprint, startup and readiness checks) and waits on owner-held secrets; steps are in [docs/DEPLOY_TESTNET.md](docs/DEPLOY_TESTNET.md).
 
 ## HOW TO TEST (Hackathon judges: start here)
 
@@ -10,13 +10,15 @@
 
 | Resource | Current status |
 | --- | --- |
-| Live app | **Not deployed yet.** One Node service serves the web app, API and demo fixture; see [docs/DEPLOY_TESTNET.md](docs/DEPLOY_TESTNET.md) |
-| NEAR testnet contract | **Not deployed yet.** Deploy with the manual GitHub Actions workflow *Deploy escrow to NEAR testnet* (key from GitHub secrets) |
+| Live app | **Not deployed yet.** Hosting is prepared as a Render Blueprint ([`render.yaml`](render.yaml)): web service (API + web app + demo fixture, no keys), background verification worker (the only holder of the verifier seed) and Postgres 16. Once live, `/readyz` must report the database and contract as `ok` |
+| NEAR testnet contract | **Not deployed yet.** Deploy with the manual GitHub Actions workflow *Deploy escrow to NEAR testnet*. It uses two repository secrets: `SETTLE_CONTRACT_ACCOUNT_ID` and `SETTLE_CONTRACT_KEY_JSON` (the near-cli credentials file). It checks the balance, refuses non-`.testnet` accounts and accidental redeploys, and confirms the onchain code hash matches the reproducible build |
+| Demo fixture | Served by the live app at `https://<app>/fixture/broken/health` (FAIL) and `/fixture/fixed/health` (PASS); `GET /v1/config` reports it as `fixtureBaseUrl` |
 | Onchain evidence today | The CI job `escrow-sandbox` builds the WASM and runs it on a **local NEAR sandbox node**: real transactions, callbacks and balance changes. That is not testnet. |
 | Test accounts | Use fresh NEAR **testnet** accounts (client, worker). Never share seed phrases or private keys |
-| Faucet | The testnet faucet linked from the [NEAR docs](https://docs.near.org/), or `near account create-account sponsor-by-faucet-service` (near-cli-rs) |
+| Faucet | The testnet faucet linked from the [NEAR docs](https://docs.near.org/), or `near account create-account sponsor-by-faucet-service <name>.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create` (near-cli-rs 0.30.1, installed with `scripts/install-near-tools.sh near-cli`) |
 | Demo walkthrough | Not recorded yet |
-| CI | Every PR runs: TypeScript build/typecheck/tests (domain, verifier, API on PGlite **and** Postgres 16, agent SDK); contract fmt/clippy/unit tests; WASM build + sandbox tests; reproducible WASM build |
+| CI | Every PR runs: TypeScript build/typecheck/tests (domain, verifier, API on PGlite **and** Postgres 16, agent SDK); contract fmt/clippy/unit tests; WASM build + sandbox tests; reproducible WASM build. NEAR tools are installed by [`scripts/install-near-tools.sh`](scripts/install-near-tools.sh) with pinned versions and SHA-256 checks |
+| Owner deployment steps | [docs/DEPLOY_TESTNET.md](docs/DEPLOY_TESTNET.md): contract account and two secrets (Part A), verifier key (Part B), Render Blueprint (Part C) |
 
 ### Judge path, once deployed (about 10 minutes, two browser profiles)
 

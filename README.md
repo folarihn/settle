@@ -2,7 +2,7 @@
 
 **Verifiable work agreements and fair payments for humans and AI agents.**
 
-> Status: Phases 0–3 are implemented and tested. That covers the agreement engine, the NEAR escrow contract (unit tests plus real local-sandbox tests), the signed HTTP verifier, the API with Postgres, the web app, the agent SDK and the demo fixture API. **Nothing is deployed yet**: no live URL, no testnet contract, no onchain transaction to show. Deployment is prepared (hardened deploy workflow, Render Blueprint, startup and readiness checks) and waits on owner-held secrets; steps are in [docs/DEPLOY_TESTNET.md](docs/DEPLOY_TESTNET.md).
+> Status: the escrow contract is **live on NEAR testnet** at [`settle-escrow-14f651.testnet`](https://testnet.nearblocks.io/address/settle-escrow-14f651.testnet). A full live run passed: FAIL then PASS from real verification, challenge window, payouts, creative revision and approval, and a 50% partial settlement, all with an AI-agent worker using the SDK. Every transaction is listed in [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md). **The web app and API are not hosted yet** (Render setup is pending), so there is no public URL to click.
 
 ## HOW TO TEST (Hackathon judges: start here)
 
@@ -11,9 +11,9 @@
 | Resource | Current status |
 | --- | --- |
 | Live app | **Not deployed yet.** Hosting is prepared as a Render Blueprint ([`render.yaml`](render.yaml)): web service (API + web app + demo fixture, no keys), background verification worker (the only holder of the verifier seed) and Postgres 16. Once live, `/readyz` must report the database and contract as `ok` |
-| NEAR testnet contract | **Not deployed yet.** Deploy with the manual GitHub Actions workflow *Deploy escrow to NEAR testnet*. It uses two repository secrets: `SETTLE_CONTRACT_ACCOUNT_ID` and `SETTLE_CONTRACT_KEY_JSON` (the near-cli credentials file). It checks the balance, refuses non-`.testnet` accounts and accidental redeploys, and confirms the onchain code hash matches the reproducible build |
-| Demo fixture | Served by the live app at `https://<app>/fixture/broken/health` (FAIL) and `/fixture/fixed/health` (PASS); `GET /v1/config` reports it as `fixtureBaseUrl` |
-| Onchain evidence today | The CI job `escrow-sandbox` builds the WASM and runs it on a **local NEAR sandbox node**: real transactions, callbacks and balance changes. That is not testnet. |
+| NEAR testnet contract | **Deployed:** [`settle-escrow-14f651.testnet`](https://testnet.nearblocks.io/address/settle-escrow-14f651.testnet), deploy tx [`2aQ9BHof…J6UH`](https://testnet.nearblocks.io/txns/2aQ9BHofYPXFT1zdZWuTZe5zmVuKNzLCZXkzdHwPJ6UH). Onchain code hash `6VgnyMtY…qLmau` equals the reproducible build of commit `01630ae` ([workflow run](https://github.com/folarihn/settle/actions/runs/41599553504)). Redeploys go through the *Deploy escrow to NEAR testnet* workflow.
+| Demo fixture | **Not hosted yet** (it is part of the web service). Once hosted: served by the live app at `https://<app>/fixture/broken/health` (FAIL) and `/fixture/fixed/health` (PASS); `GET /v1/config` reports it as `fixtureBaseUrl` |
+| Onchain evidence | **Live testnet run** ([docs/TESTNET_RUN.md](docs/TESTNET_RUN.md)): agreement `job_RA_NwhHhMfVo8HNY`, 18 transactions, 18 checks passed. Real FAIL ([`B2aDouUg…`](https://testnet.nearblocks.io/txns/B2aDouUgybrLVfGJjSF6VVCjaCbnUh5TPZvMQxvD7sDu)) released nothing; real PASS, then payout of exactly 0.3 NEAR to the agent ([`3BQLvCHJ…`](https://testnet.nearblocks.io/txns/3BQLvCHJdQ72TWAPKe3BKFaeL7xRDmc7KBzr2JrwWVNi)); revision then approval; partial settlement paying 0.05 NEAR to each side ([`DZzxMRUa…`](https://testnet.nearblocks.io/txns/DZzxMRUare9P3sUoMJdAD8TfLcsLB1nmFYzsFJVbYWFu)). Reproduce with `scripts/testnet-e2e.mjs`. CI also runs the contract on a local sandbox node |
 | Test accounts | Use fresh NEAR **testnet** accounts (client, worker). Never share seed phrases or private keys |
 | Faucet | The testnet faucet linked from the [NEAR docs](https://docs.near.org/), or `near account create-account sponsor-by-faucet-service <name>.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create` (near-cli-rs 0.30.1, installed with `scripts/install-near-tools.sh near-cli`) |
 | Demo walkthrough | Not recorded yet |

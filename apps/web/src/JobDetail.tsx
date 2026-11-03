@@ -79,6 +79,8 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
     const hash = await sendCall(session.wallet, call);
     setPendingCall(null);
     recordTx(label, hash);
+    // The API reads the contract at "final" finality, which trails inclusion by a few blocks.
+    await new Promise((r) => setTimeout(r, 3000));
     await api("POST", `/v1/jobs/${jobId}/sync`);
   };
 

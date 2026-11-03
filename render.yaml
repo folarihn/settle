@@ -10,14 +10,15 @@ envVarGroups:
     envVars:
       - key: NEAR_NETWORK
         value: testnet
+      # Public values for the deployed testnet contract (see docs/TESTNET_RUN.md).
       - key: SETTLE_ESCROW_CONTRACT
-        sync: false
+        value: settle-escrow-14f651.testnet
       - key: SETTLE_VERIFIER_ACCOUNT
-        sync: false
+        value: settle-verifier-14f651.testnet
       - key: SETTLE_VERIFIER_PUBLIC_KEY
-        sync: false
+        value: a42304d5d9a73416c6050caa2ed88ad43625b063697892d922e1ea16b0f4c723
       - key: SETTLE_RESOLVER_ACCOUNT
-        sync: false
+        value: settle-resolver-14f651.testnet
 
 services:
   - type: web

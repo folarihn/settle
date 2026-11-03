@@ -211,3 +211,18 @@ Diagnosis: a direct `POST /kick` from outside Render woke the verifier in 22.8 s
 | client refund of the other half confirmed onchain (worker paid 0.05 NEAR, client refunded 0.05 NEAR) | ✅ |
 | agreement Completed onchain and offchain | ✅ |
 | no divergence between offchain record and contract | ✅ |
+
+## Run 5: cold start with the client-side wake-up (PASS)
+
+Agreement `job_aWxkJqf1IrljvQk9` (0.01 NEAR, one automated milestone), through the public deployment at commit `9b24276`. Setup: create [`BAWaX6pW…`](https://testnet.nearblocks.io/txns/BAWaX6pWQAwzYDyPHWEkHMn83H6VSUY9RYGNAvaqitbF), accept [`7ryvYwXH…`](https://testnet.nearblocks.io/txns/7ryvYwXH5NGqo2ZXaiWskyt8EDESsAHHs1atpbKU6xMG), fund [`4hyQy3zz…`](https://testnet.nearblocks.io/txns/4hyQy3zz5JX4MhhWvuJmNJnwWoW1JmBpswKVxEadwEkU), submit `/fixture/broken` [`EFyzg3Db…`](https://testnet.nearblocks.io/txns/EFyzg3DbQqj3TmMnKPwYrJvDQD8dLQW99456zpkVVLGZ).
+
+| Time (UTC) | Evidence |
+| --- | --- |
+| 17:41:39 | Render API: verifier `instances=[]`. The process that started with the deploy at 17:39:37 had stopped. |
+| 17:41:41 | Verification queued through the API; the agent SDK sends `POST /kick` to the verifier from outside Render. |
+| 17:41:42 | Render creates a new verifier instance; the log shows a fresh `worker-main.js` boot at 17:41:50. |
+| 17:41:54 | Result `DONE`, `FAIL` (`$.status == "ok"`, observed `"degraded"`); evidence matches the signed report. **14 s from queueing to result.** |
+| 17:41:57 | Signed FAIL relayed onchain: [`8ewtkhX7…`](https://testnet.nearblocks.io/txns/8ewtkhX7HTctjdxScpUPvxZk8KQUtmyXm45o8ieLqpvG) |
+| 17:42:15 | The API's own service-to-service wake-up again got `502`, confirming the diagnosis from run 4. |
+
+Caveat: here the verifier had no instance about 2 minutes after a deploy, not after a 15-minute idle sleep. For the hours-long sleep in run 4, an outside wake-up took 22.8 s to answer. Expect roughly 15–60 s for the first verification after idle.

@@ -116,7 +116,8 @@ describe("recovering from a failed wake-up", () => {
     await new Promise((r) => setTimeout(r, 300)); // let the failing wake-up call settle
     expect((await agent.get(`/v1/verifications/${queued.json().id}`)).json().status).toBe("QUEUED");
 
-    expect(await h.runVerifier()).toBe(1);
+    // On the shared CI Postgres other tests' queued runs may be drained too; only ours matters.
+    expect(await h.runVerifier()).toBeGreaterThanOrEqual(1);
     expect((await agent.get(`/v1/verifications/${queued.json().id}`)).json()).toMatchObject({ status: "DONE", outcome: "PASS" });
     await h.close();
   });

@@ -155,6 +155,8 @@ try {
     tx(`submit ${label} (agent)`, (await agent.actOnChain(id, { type: "SUBMIT", milestoneId: "api", artifactHash: `commit-${label}`, uri })).txHash);
     const queuedAt = Date.now();
     const queued = await agent.requestVerification(id, "api");
+    const dup = await client.requestVerification(id, "api").then(() => "accepted", (e) => e.code ?? e.message);
+    check(`a second verification request for the same submission is refused (${label})`, ["IN_FLIGHT", "INVALID_TRANSITION"].includes(dup), dup);
     await runVerifier();
     const done = hostedWorker
       ? await agent.waitForVerification(queued.id, { timeoutMs: 240_000, intervalMs: 3000 })

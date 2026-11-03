@@ -97,3 +97,27 @@ describe("waking a worker hosted on a sleep-on-idle plan", () => {
     worker.close();
   });
 });
+
+describe("recovering from a failed wake-up", () => {
+  it("keeps the job queued when the worker cannot be reached, and a later worker run completes it", async () => {
+    const { as, jobInput, login, onchainFunded, startHarness, WORKER } = await import("./harness.js");
+    // Port 1 refuses connections: the wake-up call fails.
+    const h = await startHarness(undefined, { workerWakeUrl: "http://127.0.0.1:1" });
+    const client = as(h, await login(h, "client.testnet"));
+    const agent = as(h, await login(h, WORKER, "AGENT"));
+    const job = (await client.post("/v1/jobs", jobInput())).json();
+    await agent.post(`/v1/jobs/${job.id}/actions`, { type: "ACCEPT_TERMS", termsHash: job.state.termsHash });
+    h.chain.agreements.set(job.id, onchainFunded((await client.get(`/v1/jobs/${job.id}`)).json().job.state));
+    await client.post(`/v1/jobs/${job.id}/sync`);
+    await agent.post(`/v1/jobs/${job.id}/actions`, { type: "SUBMIT", milestoneId: "api", artifactHash: "c1", uri: `${h.fixtureOrigin}/fixed` });
+
+    const queued = await agent.post(`/v1/jobs/${job.id}/milestones/api/verifications`);
+    expect([queued.statusCode, queued.json().status]).toEqual([202, "QUEUED"]);
+    await new Promise((r) => setTimeout(r, 300)); // let the failing wake-up call settle
+    expect((await agent.get(`/v1/verifications/${queued.json().id}`)).json().status).toBe("QUEUED");
+
+    expect(await h.runVerifier()).toBe(1);
+    expect((await agent.get(`/v1/verifications/${queued.json().id}`)).json()).toMatchObject({ status: "DONE", outcome: "PASS" });
+    await h.close();
+  });
+});

@@ -20,20 +20,37 @@
 | CI | Every PR runs: TypeScript build/typecheck/tests (domain, verifier, API on PGlite **and** Postgres 16, agent SDK); contract fmt/clippy/unit tests; WASM build + sandbox tests; reproducible WASM build. NEAR tools are installed by [`scripts/install-near-tools.sh`](scripts/install-near-tools.sh) with pinned versions and SHA-256 checks |
 | Owner deployment steps | [docs/DEPLOY_TESTNET.md](docs/DEPLOY_TESTNET.md): contract account and two secrets (Part A), verifier key (Part B), Render Blueprint (Part C) |
 
-### Judge path (about 10 minutes, two browser profiles)
+### Before you start (5 minutes, once)
 
-1. Open https://settle-9ewd.onrender.com. **Connect wallet** (MyNearWallet, testnet), then **Sign in as …**. Signing in signs a message only; it does not send a transaction.
-2. As the **client**: **New job**. Enter the worker's testnet account and keep the defaults: an API milestone (0.35 NEAR) using the demo verification plan, and a design milestone (0.15 NEAR) with 2 revisions and a 0.075 NEAR protected floor. **Create job and sign create_agreement** (storage deposit; the unused part is refunded).
-3. As the **worker** (second profile or wallet): open the job and click **Accept terms** (signs `accept_terms`).
-4. As the client: **Fund escrow (0.5 NEAR)**. The onchain status becomes `Funded`.
-5. Worker, API milestone: enter commit `demo-broken` and URL `https://settle-9ewd.onrender.com/fixture/broken`, then click **Submit work** (signs `submit`). Click **Run verification** (if the verifier was asleep, the first result takes about a minute). The result is a real **FAIL** (`$.status == "ok"` fails). Open **Evidence**, then **Record onchain**. Nothing becomes payable.
-6. Worker: submit `demo-fixed` with `https://settle-9ewd.onrender.com/fixture/fixed`, run verification again, and get a real **PASS**. Click **Record onchain**. After the challenge window (2 minutes by default), click **Finalize after challenge window**, then **Pay out (onchain transfer)**. Check the transfer on testnet.nearblocks.io from the transaction list.
-7. Design milestone: the worker submits, and the client clicks **Request revision**. The worker resubmits. Then either the client clicks **Approve and release**, or one party uses **Propose partial settlement** (e.g. 0.075 NEAR) and the other clicks **Accept … settlement**. Pay out and check both transfers.
-8. Agent parity: run `packages/agent-sdk/dist/demo-worker.js` as the worker (instructions are in that file). It uses the same API, does the same FAIL then PASS sequence, and relays the reports with the agent's own key.
+1. Use two browser profiles (or two browsers): one for the **client**, one for the **worker**.
+2. In each, create a NEAR **testnet** account at https://testnet.mynearwallet.com, and get testnet NEAR from the faucet at https://near-faucet.io. The client needs about 1 NEAR (0.5 NEAR escrow, a 0.2 NEAR storage deposit that is mostly refunded, and gas). The worker needs a little for gas.
+3. Allow pop-ups for `settle-9ewd.onrender.com`. MyNearWallet opens a pop-up for every signature.
+4. Free hosting: if nobody has used the site for about 15 minutes, the first page load and the first verification each take about a minute while the service wakes up.
 
-### Also verifiable without a wallet
+### Judge path (about 15 minutes)
 
-Open the latest **CI** run on the PR. The `escrow-sandbox` job log shows the deployed WASM's payout raising the worker's real balance by exactly the milestone amount, and a second payout being rejected. The `typescript` job runs the API → verifier → fixture flow and shows a real FAIL, then a real PASS.
+1. Open https://settle-9ewd.onrender.com, click **Connect a testnet wallet** → **MyNearWallet** and approve in the pop-up, then click **Sign in as …**. Signing in signs a message only; it does not send a transaction.
+2. **Client:** click **Create agreement**, enter the worker's testnet account and keep the defaults: an automated API milestone (0.35 NEAR) with the demo verification plan, and a human-review design milestone (0.15 NEAR, 2 revisions, 0.075 NEAR protected floor). Click **Create agreement (signs create_agreement)** and approve.
+3. **Worker:** open the agreement from **Your agreements** and click **Accept terms** (signs `accept_terms`).
+4. **Client:** click **Fund escrow (0.5 NEAR)**. The onchain status becomes `Funded`; the transaction appears under *Your transactions* with a nearblocks link.
+5. **Worker, API milestone:** commit `demo-broken`, URL `https://settle-9ewd.onrender.com/fixture/broken` → **Submit work** → **Run verification**. You get a real **FAIL**. Click **Evidence** to see `$.status == "ok"` failing with `got "degraded"`, then **Record onchain**. No payout button appears; nothing is payable.
+6. **Worker:** commit `demo-fixed`, URL `https://settle-9ewd.onrender.com/fixture/fixed` → **Submit work** → **Run verification** → **PASS** → **Record onchain**. The status shows the challenge window and its end time. **Finalize after challenge window** stays disabled until then. After about 2 minutes, reload the page, click it, then **Pay out (onchain transfer)** and check the transfer on nearblocks.
+7. **Design milestone:** the worker submits (any content hash, optional link), and the client clicks **Request revision**. The worker resubmits. Then either the client clicks **Approve and release**, or one party enters `0.075` → **Propose partial settlement** and the other clicks **Accept 0.075 NEAR settlement**. Then **Pay out** sends the worker's share and the client's refund as two transfers. The pay-out button disappears afterwards, and the contract rejects a second payout.
+8. **Agent parity:** the same flow driven only by an AI agent's key through the SDK is recorded in [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md) (run 3), with every transaction linked.
+
+### Verifiable without a wallet
+
+- [`/readyz`](https://settle-9ewd.onrender.com/readyz) shows the database and the escrow contract answering. The fixture's [failing](https://settle-9ewd.onrender.com/fixture/broken/health) and [passing](https://settle-9ewd.onrender.com/fixture/fixed/health) responses are public.
+- The run-3 transactions in [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md) open on testnet.nearblocks.io: a FAIL that released nothing, a PASS, a payout of exactly 0.3 NEAR, revision then approval, and a 50/50 split paying both parties.
+
+### Known limitations
+
+- **Testnet only;** no mainnet funds.
+- **Wallets:** only MyNearWallet is wired up in the web app. Wallet sign-in has not been exercised by automated browser tests (the wallet pop-up needs a real person); the same NEP-413 login and every contract call are proven by the agent-SDK runs.
+- **Free tier:** Render services sleep after about 15 minutes idle (about 1 minute to wake). The Render Postgres database is on the free plan and **expires on 2026-12-03**.
+- **Ordering:** the API records an action before the wallet signs it. If a wallet pop-up is cancelled, the page shows a divergence notice with a retry button; money always follows the onchain state.
+- **Verifier:** checks HTTP APIs only (one request per plan); it never runs submitted code.
+- **Contract upgradability:** the contract account is not locked, so whoever holds its key could deploy different code.
 
 ## What SETTLE does
 

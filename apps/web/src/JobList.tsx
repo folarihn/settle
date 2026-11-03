@@ -14,14 +14,14 @@ export function JobList() {
   return (
     <section className="card">
       <div className="row">
-        <h2>Your jobs</h2>
+        <h2>Your agreements</h2>
         <span className="spacer" />
         <a className="button" href="#/new">
-          New job
+          Create agreement
         </a>
       </div>
       {error && <p className="error">{error}</p>}
-      {jobs?.length === 0 && <p className="muted">No jobs yet. Create one as a client, or ask a client to name your account as the worker.</p>}
+      {jobs?.length === 0 && <p className="muted">No agreements yet. Create one as the client, or ask a client to name your account as the worker. Agreements where you are the resolver also appear here.</p>}
       {jobs && jobs.length > 0 && (
         <table>
           <thead>

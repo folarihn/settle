@@ -63,3 +63,5 @@ export async function sendCall(w: Wallet, call: ContractCall): Promise<string> {
 }
 
 export const explorerTx = (network: string, hash: string) => `https://${network === "testnet" ? "testnet." : ""}nearblocks.io/txns/${hash}`;
+export const explorerAccount = (network: string, account: string) =>
+  `https://${network === "testnet" ? "testnet." : ""}nearblocks.io/address/${account}`;

@@ -57,7 +57,7 @@ export function CreateJob({ session }: { session: Session }) {
 
   return (
     <form className="card form" onSubmit={submit}>
-      <h2>New job</h2>
+      <h2>Create agreement</h2>
       <p className="muted">You are the client. Terms are locked once the worker accepts and you fund escrow.</p>
       <label>
         Worker NEAR account
@@ -104,7 +104,7 @@ export function CreateJob({ session }: { session: Session }) {
         Challenge window after a PASS (seconds, min 60)
         <input type="number" min={60} value={challengeSec} onChange={(e) => setChallengeSec(Number(e.target.value))} />
       </label>
-      <button disabled={busy}>{busy ? "Working..." : "Create job and sign create_agreement"}</button>
+      <button disabled={busy}>{busy ? "Working…" : "Create agreement (signs create_agreement)"}</button>
       {status && <p>{status}</p>}
       {error && <p className="error">{error}</p>}
     </form>

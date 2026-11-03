@@ -221,7 +221,7 @@ function MilestoneCard({ m, terms, onchainStatus, job, verifications, busy, act,
   const [uri, setUri] = useState("");
   const [text, setText] = useState("");
   const [amount, setAmount] = useState("");
-  const [evidence, setEvidence] = useState<unknown>(null);
+  const [evidence, setEvidence] = useState<EvidenceResponse | null>(null);
   const is = (role: string) => job.roles.includes(role);
   const funded = job.state.status === "FUNDED";
   const human = terms.type === "HUMAN_REVIEW";
@@ -241,10 +241,16 @@ function MilestoneCard({ m, terms, onchainStatus, job, verifications, busy, act,
       </div>
       <dl className="grid">
         <dt>Type</dt>
-        <dd>{human ? `Human review · ${m.revisionsUsed}/${terms.maxRevisions} revisions used` : "Automated API check"}</dd>
-        <dt>Status (offchain / onchain)</dt>
         <dd>
-          {s} / {onchainStatus ?? "—"}
+          <span className={`pill ${human ? "kind-human" : "kind-auto"}`}>{human ? "Human review" : "Automated verification"}</span>{" "}
+          {human ? `${m.revisionsUsed}/${terms.maxRevisions} revisions used` : "an independent verifier signs PASS or FAIL"}
+        </dd>
+        <dt>Status</dt>
+        <dd>
+          <strong>{STATUS_TEXT[s] ?? s}</strong>
+          <div className="muted small">
+            offchain {s} · onchain {onchainStatus ?? "—"}
+          </div>
         </dd>
         {m.submission && (
           <>
@@ -401,7 +407,7 @@ function MilestoneCard({ m, terms, onchainStatus, job, verifications, busy, act,
                 <td>
                   {v.status === "DONE" && (
                     <>
-                      <button className="secondary" onClick={() => api("GET", `/v1/verifications/${v.id}/evidence`).then(setEvidence)}>
+                      <button className="secondary" onClick={() => api<EvidenceResponse>("GET", `/v1/verifications/${v.id}/evidence`).then(setEvidence)}>
                         Evidence
                       </button>
                       {v.contractCall && (
@@ -417,8 +423,85 @@ function MilestoneCard({ m, terms, onchainStatus, job, verifications, busy, act,
           </tbody>
         </table>
       )}
-      {evidence !== null && <pre className="evidence">{JSON.stringify(evidence, null, 2)}</pre>}
+      {evidence !== null && <EvidenceView data={evidence} onClose={() => setEvidence(null)} />}
     </section>
+  );
+}
+
+const STATUS_TEXT: Record<string, string> = {
+  PENDING: "Waiting for the worker to submit",
+  SUBMITTED: "Submitted — awaiting verification or review",
+  VERIFIED_PENDING_CHALLENGE: "PASS — challenge window open; not payable yet",
+  REVISION_REQUESTED: "Revision requested — funds stay locked",
+  DISPUTED: "In dispute — the resolver decides within the agreed bounds",
+  CLAIMABLE: "Payable — client or worker can trigger the payout",
+  PAYOUT_PENDING: "Payout transfer in progress",
+  PAID: "Paid onchain",
+};
+
+interface EvidenceResponse {
+  matchesReport: boolean;
+  report: { outcome: string; submissionSeq: number; artifactHash: string; evidenceDigest: string; issuedAt: number };
+  evidence: {
+    targetUrl: string | null;
+    status: number | null;
+    latencyMs: number | null;
+    responseBytes: number | null;
+    checks: { check: string; ok: boolean; detail: string }[];
+    error: { kind: string; message: string } | null;
+  };
+}
+
+/** Human-readable evidence: what was called, each agreed check, and whether it matches the signed report. */
+function EvidenceView({ data, onClose }: { data: EvidenceResponse; onClose: () => void }) {
+  const { report, evidence, matchesReport } = data;
+  return (
+    <div className="evidence">
+      <div className="row">
+        <strong className={report.outcome === "PASS" ? "ok" : "bad"}>{report.outcome}</strong>
+        <span className="muted small">
+          submission #{report.submissionSeq} · {report.artifactHash} · signed {new Date(report.issuedAt).toLocaleString()}
+        </span>
+        <span className="spacer" />
+        <button className="secondary" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <p className="small">
+        Called <span className="mono">{evidence.targetUrl ?? "—"}</span>
+        {evidence.status !== null && ` → HTTP ${evidence.status}`}
+        {evidence.latencyMs !== null && ` in ${evidence.latencyMs} ms`}
+        {evidence.error && ` · ${evidence.error.kind}: ${evidence.error.message}`}
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Agreed check</th>
+            <th>Result</th>
+            <th>Observed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {evidence.checks.map((c) => (
+            <tr key={c.check}>
+              <td className="mono">{c.check}</td>
+              <td className={c.ok ? "ok" : "bad"}>{c.ok ? "PASS" : "FAIL"}</td>
+              <td className="mono">{c.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="small">
+        {matchesReport
+          ? "✓ This evidence hashes to the digest inside the verifier's signed report, so it has not been altered."
+          : "✗ This evidence does not match the signed report's digest — do not trust it."}{" "}
+        <span className="muted mono">{report.evidenceDigest}</span>
+      </p>
+      <details>
+        <summary className="small">Raw evidence JSON</summary>
+        <pre>{JSON.stringify(data, null, 2)}</pre>
+      </details>
+    </div>
   );
 }
 

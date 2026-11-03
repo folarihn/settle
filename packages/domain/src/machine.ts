@@ -318,7 +318,8 @@ function applyMilestoneEvent(state: AgreementState, e: MilestoneEvent): void {
     }
 
     case "START_PAYOUT": {
-      requireRole(state, e.actor, ["client", "worker"]);
+      // Recipients are fixed by the allocation; the verifier may trigger it for automatic payouts.
+      requireRole(state, e.actor, ["client", "worker", "verifier"]);
       requireStatus(m, ["CLAIMABLE"]);
       m.status = "PAYOUT_PENDING";
       return;

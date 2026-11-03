@@ -437,13 +437,13 @@ fn payout_is_single_flight_and_a_failed_transfer_is_recoverable() {
 }
 
 #[test]
-fn only_parties_can_trigger_payout_and_only_the_contract_can_confirm_it() {
+fn only_parties_or_the_verifier_can_trigger_payout_and_only_the_contract_can_confirm_it() {
     let mut c = api_claimable();
-    as_(VERIFIER, 0, T0 + 2 * DAY);
+    as_(RESOLVER, 0, T0 + 2 * DAY);
     expect_err("UNAUTHORIZED", || {
         c.payout(ID.into(), "api".into());
     });
-    as_(WORKER, 0, T0 + 2 * DAY);
+    as_(VERIFIER, 0, T0 + 2 * DAY);
     c.payout(ID.into(), "api".into());
     as_(WORKER, 0, T0 + 2 * DAY);
     let forged =

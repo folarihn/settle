@@ -55,6 +55,7 @@ export interface ContractAgreement {
   funded_at_ms: number | null;
   milestones: {
     status: ContractMilestoneStatus;
+    challenge_ends_at_ms?: number | null;
     submission: { seq: number; artifact_hash: string; submitted_at_ms: number } | null;
     submission_count: number;
     allocated: boolean;

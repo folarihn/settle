@@ -97,6 +97,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env, role: "api" 
   if (role === "api") {
     // The internet-facing API must never hold the verifier seed. The only exception is the
     // single-process PGlite demo, where the worker runs in-process by design.
+    if (env.SETTLE_RELAYER_PRIVATE_KEY) {
+      throw new ConfigError("SETTLE_RELAYER_PRIVATE_KEY must not be set on the API process; give it only to the worker");
+    }
     if (config.databaseUrl && env.SETTLE_VERIFIER_SEED) {
       throw new ConfigError("SETTLE_VERIFIER_SEED must not be set on the API process; give it only to the worker");
     }

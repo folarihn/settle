@@ -66,10 +66,18 @@ export async function runWorkerLoop(
   seedHex: string,
   log: { error: (o: unknown, msg?: string) => void },
   idleMs = 1000,
+  keeper?: { tick: (jobId?: string) => Promise<number> },
+  keeperEveryMs = 15_000,
 ): Promise<never> {
+  let lastKeep = 0;
   for (;;) {
     try {
-      if ((await drainQueue(verifications, { seedHex })) === 0) await new Promise((r) => setTimeout(r, idleMs));
+      const processed = await drainQueue(verifications, { seedHex });
+      if (keeper && (processed > 0 || Date.now() - lastKeep >= keeperEveryMs)) {
+        lastKeep = Date.now();
+        await keeper.tick();
+      }
+      if (processed === 0) await new Promise((r) => setTimeout(r, idleMs));
     } catch (e) {
       log.error(e, "verification worker iteration failed");
       await new Promise((r) => setTimeout(r, idleMs));

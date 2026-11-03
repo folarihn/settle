@@ -101,11 +101,31 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
     await api("POST", `/v1/jobs/${jobId}/sync`);
   };
 
-  const act = (label: string, action: Record<string, unknown>) =>
+  const act = (label: string, action: Record<string, unknown>, after?: () => Promise<unknown>) =>
     run(label, async () => {
       const r = await api<{ contractCall: ContractCall | null }>("POST", `/v1/jobs/${jobId}/actions`, action);
       if (r.contractCall) await sign(label, r.contractCall);
+      if (after) await after();
     });
+
+  // Keep the page current without reloads: the other party's actions and automatic steps
+  // (recorded results, finalize, payout) appear on their own.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!busy && document.visibilityState === "visible") load().catch(() => undefined);
+    }, 5000);
+    return () => clearInterval(t);
+  }, [busy, load]);
+
+  // While the verifier service has something to do (verify, record, finalize, pay out), make
+  // sure it is awake: on free hosting it sleeps and only wakes for outside traffic.
+  const verifierHasWork = !!job?.state.milestones.some((m) => ["SUBMITTED", "VERIFIED_PENDING_CHALLENGE", "CLAIMABLE", "PAYOUT_PENDING"].includes(m.status));
+  useEffect(() => {
+    if (!verifierHasWork) return;
+    wakeVerifier(session.config.workerWakeUrl);
+    const t = setInterval(() => wakeVerifier(session.config.workerWakeUrl), 10_000);
+    return () => clearInterval(t);
+  }, [verifierHasWork, session.config.workerWakeUrl]);
 
   const signOnly = (label: string, call: ContractCall) => run(label, () => sign(label, call));
 
@@ -233,7 +253,7 @@ interface CardProps {
   job: Job;
   verifications: Verification[];
   busy: boolean;
-  act: (label: string, action: Record<string, unknown>) => Promise<void>;
+  act: (label: string, action: Record<string, unknown>, after?: () => Promise<unknown>) => Promise<void>;
   signOnly: (label: string, call: ContractCall) => Promise<void>;
   run: (label: string, fn: () => Promise<void>) => Promise<void>;
   network: string;
@@ -319,8 +339,8 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
             <div className="inline-form">
               <input placeholder={human ? "content hash of the deliverable" : "git commit SHA"} value={artifact} onChange={(e) => setArtifact(e.target.value)} />
               <input placeholder={human ? "link to the deliverable (optional)" : `deployment base URL, e.g. ${fixtureBase}/broken`} value={uri} onChange={(e) => setUri(e.target.value)} />
-              <button disabled={busy || !artifact} onClick={() => act("submit", { type: "SUBMIT", ...ms, artifactHash: artifact, ...(uri ? { uri } : {}) })}>
-                Submit work
+              <button disabled={busy || !artifact} onClick={() => act("submit", { type: "SUBMIT", ...ms, artifactHash: artifact, ...(uri ? { uri } : {}) }, human || !uri ? undefined : () => api("POST", `/v1/jobs/${job.id}/milestones/${m.id}/verifications`))}>
+                {human ? "Submit work" : "Submit and verify"}
               </button>
             </div>
           )}

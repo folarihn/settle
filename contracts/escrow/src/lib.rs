@@ -351,7 +351,9 @@ impl Escrow {
     pub fn payout(&mut self, agreement_id: String, milestone_id: String) {
         let mut transfers: Vec<(Recipient, AccountId, u128)> = Vec::new();
         self.with_milestone(&agreement_id, &milestone_id, |a, i| {
-            require_role(a, &[Role::Client, Role::Worker]);
+            // The verifier may also trigger it so payouts can happen automatically; the
+            // recipients and amounts are fixed by the allocation, so no caller can redirect funds.
+            require_role(a, &[Role::Client, Role::Worker, Role::Verifier]);
             let (worker, client) = (a.terms.worker.clone(), a.terms.client.clone());
             let m = &mut a.milestones[i];
             require_status(m, &[MilestoneStatus::Claimable]);

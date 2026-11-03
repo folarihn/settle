@@ -4,6 +4,7 @@ export * from "./config.js";
 export * from "./db.js";
 export * from "./errors.js";
 export * from "./jobs.js";
+export * from "./keeper.js";
 export * from "./server.js";
 export * from "./verifications.js";
 export * from "./worker.js";

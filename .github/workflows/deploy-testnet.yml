@@ -10,6 +10,10 @@ name: Deploy escrow to NEAR testnet
 # replace the code, so for a public demo either keep the key in this secret only or lock
 # the account afterwards (see docs/DEPLOY_TESTNET.md).
 on:
+  # Deliberate deploys only: a manual run (once this workflow is on the default branch),
+  # or pushing a tag named testnet-deploy-* (works from any branch, e.g. before merge).
+  push:
+    tags: ["testnet-deploy-*"]
   workflow_dispatch:
     inputs:
       allow_redeploy:

@@ -58,7 +58,7 @@ export interface Job {
 }
 
 export interface ChainSnapshot {
-  agreement: { status: string; milestones: { status: string }[] } | null;
+  agreement: { status: string; milestones: { status: string; submission: { seq: number } | null }[] } | null;
   error: string | null;
   termsMatch: boolean | null;
   divergences: { milestoneId: string; offchain: string; onchain: string }[];

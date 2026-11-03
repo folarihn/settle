@@ -195,6 +195,7 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
           m={m}
           terms={terms.milestones[i]!}
           onchainStatus={onchain?.milestones[i]?.status}
+          onchainSubmissionSeq={onchain?.milestones[i]?.submission?.seq ?? null}
           job={job}
           verifications={verifications.filter((v) => v.milestoneId === m.id)}
           busy={!!busy}
@@ -227,6 +228,8 @@ interface CardProps {
   m: Milestone;
   terms: MilestoneTerms;
   onchainStatus: string | undefined;
+  /** The submission the contract is waiting on a result for; only its report can be recorded. */
+  onchainSubmissionSeq: number | null;
   job: Job;
   verifications: Verification[];
   busy: boolean;
@@ -236,7 +239,7 @@ interface CardProps {
   network: string;
 }
 
-function MilestoneCard({ m, terms, onchainStatus, job, verifications, busy, act, signOnly, run }: CardProps) {
+function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, verifications, busy, act, signOnly, run }: CardProps) {
   const [artifact, setArtifact] = useState("");
   const [uri, setUri] = useState("");
   const [text, setText] = useState("");
@@ -430,7 +433,7 @@ function MilestoneCard({ m, terms, onchainStatus, job, verifications, busy, act,
                       <button className="secondary" onClick={() => api<EvidenceResponse>("GET", `/v1/verifications/${v.id}/evidence`).then(setEvidence)}>
                         Evidence
                       </button>
-                      {v.contractCall && (
+                      {v.contractCall && onchainStatus === "Submitted" && onchainSubmissionSeq === v.submissionSeq && (
                         <button className="secondary" disabled={busy} onClick={() => signOnly("record_verification", v.contractCall!)}>
                           Record onchain
                         </button>
@@ -452,6 +455,9 @@ function MilestoneCard({ m, terms, onchainStatus, job, verifications, busy, act,
 function friendlyError(message: string): string {
   if (/agreement id already exists/i.test(message)) {
     return "This agreement is already created onchain (your earlier transaction went through). Reload the page to continue.";
+  }
+  if (/expected one of \[Submitted\]/i.test(message)) {
+    return "Nothing to record: the contract is not waiting on this result (it was probably recorded already). Reload the page.";
   }
   if (/challenge period has not ended/i.test(message)) return "The challenge window is still open. Wait until the end time shown, then reload and try again.";
   if (/User closed the window|User rejected|rejected/i.test(message)) return "The wallet request was cancelled. Nothing was sent.";

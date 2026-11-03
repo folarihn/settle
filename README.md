@@ -2,7 +2,7 @@
 
 **Verifiable work agreements and fair payments for humans and AI agents.**
 
-> Status: the escrow contract is **live on NEAR testnet** at [`settle-escrow-14f651.testnet`](https://testnet.nearblocks.io/address/settle-escrow-14f651.testnet). A full live run passed: FAIL then PASS from real verification, challenge window, payouts, creative revision and approval, and a 50% partial settlement, all with an AI-agent worker using the SDK. Every transaction is listed in [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md). **The web app and API are not hosted yet** (Render setup is pending), so there is no public URL to click.
+> Status: **live on NEAR testnet.** Web app and API: **https://settle-9ewd.onrender.com**. Escrow contract: [`settle-escrow-14f651.testnet`](https://testnet.nearblocks.io/address/settle-escrow-14f651.testnet). Two verified end-to-end runs are recorded in [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md); the second went through the public deployment and its hosted FAIL/PASS fixture, with an AI-agent worker using the SDK. **Pending:** the always-on Render verification worker, which needs a payment card on the Render account. Until it runs, **Run verification** requests stay queued.
 
 ## HOW TO TEST (Hackathon judges: start here)
 
@@ -10,28 +10,28 @@
 
 | Resource | Current status |
 | --- | --- |
-| Live app | **Not deployed yet.** Hosting is prepared as a Render Blueprint ([`render.yaml`](render.yaml)): web service (API + web app + demo fixture, no keys), background verification worker (the only holder of the verifier seed) and Postgres 16. Once live, `/readyz` must report the database and contract as `ok` |
+| Live app | **Live:** https://settle-9ewd.onrender.com (Render web service; free plan, so the first visit after about 15 minutes idle takes about a minute to wake). Health: [`/healthz`](https://settle-9ewd.onrender.com/healthz), readiness (database + contract): [`/readyz`](https://settle-9ewd.onrender.com/readyz). Postgres 16 on Render. **Verification worker not running yet** (needs a payment card on Render); verification requests queue until it starts |
 | NEAR testnet contract | **Deployed:** [`settle-escrow-14f651.testnet`](https://testnet.nearblocks.io/address/settle-escrow-14f651.testnet), deploy tx [`2aQ9BHof…J6UH`](https://testnet.nearblocks.io/txns/2aQ9BHofYPXFT1zdZWuTZe5zmVuKNzLCZXkzdHwPJ6UH). Onchain code hash `6VgnyMtY…qLmau` equals the reproducible build of commit `01630ae` ([workflow run](https://github.com/folarihn/settle/actions/runs/41599553504)). Redeploys go through the *Deploy escrow to NEAR testnet* workflow.
-| Demo fixture | **Not hosted yet** (it is part of the web service). Once hosted: served by the live app at `https://<app>/fixture/broken/health` (FAIL) and `/fixture/fixed/health` (PASS); `GET /v1/config` reports it as `fixtureBaseUrl` |
-| Onchain evidence | **Live testnet run** ([docs/TESTNET_RUN.md](docs/TESTNET_RUN.md)): agreement `job_RA_NwhHhMfVo8HNY`, 18 transactions, 18 checks passed. Real FAIL ([`B2aDouUg…`](https://testnet.nearblocks.io/txns/B2aDouUgybrLVfGJjSF6VVCjaCbnUh5TPZvMQxvD7sDu)) released nothing; real PASS, then payout of exactly 0.3 NEAR to the agent ([`3BQLvCHJ…`](https://testnet.nearblocks.io/txns/3BQLvCHJdQ72TWAPKe3BKFaeL7xRDmc7KBzr2JrwWVNi)); revision then approval; partial settlement paying 0.05 NEAR to each side ([`DZzxMRUa…`](https://testnet.nearblocks.io/txns/DZzxMRUare9P3sUoMJdAD8TfLcsLB1nmFYzsFJVbYWFu)). Reproduce with `scripts/testnet-e2e.mjs`. CI also runs the contract on a local sandbox node |
+| Demo fixture | **Live:** [`/fixture/broken/health`](https://settle-9ewd.onrender.com/fixture/broken/health) (FAIL) and [`/fixture/fixed/health`](https://settle-9ewd.onrender.com/fixture/fixed/health) (PASS); `GET /v1/config` reports the base as `fixtureBaseUrl` |
+| Onchain evidence | [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md). Run 2, **through the public deployment**, agreement `job_djswNSwMkwPIfNhF`: hosted fixture FAIL ([`7Zy8iEqy…`](https://testnet.nearblocks.io/txns/7Zy8iEqyJXXcyJqA2G8gee68KrorjF7iGHbxJ4VMJ7Kv)) released nothing; PASS ([`7AGHC9zx…`](https://testnet.nearblocks.io/txns/7AGHC9zxwQeAazP7sihtbxkxSnP9UtzFuNiXnRqZqK9T)), then challenge window, then 0.3 NEAR paid to the agent ([`7Wypge71…`](https://testnet.nearblocks.io/txns/7Wypge712BQWcPZYZY2vCdpmQNdaQZvXJZfL2G6Qvaz7)); revision then approval; 50/50 partial settlement ([`DCLFuiMv…`](https://testnet.nearblocks.io/txns/DCLFuiMvrdGouvLtY8WJWuVBV7kidayZHYha3qViChA2)). Run 1 used a local API. Reproduce with `scripts/testnet-e2e.mjs` |
 | Test accounts | Use fresh NEAR **testnet** accounts (client, worker). Never share seed phrases or private keys |
 | Faucet | The testnet faucet linked from the [NEAR docs](https://docs.near.org/), or `near account create-account sponsor-by-faucet-service <name>.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create` (near-cli-rs 0.30.1, installed with `scripts/install-near-tools.sh near-cli`) |
 | Demo walkthrough | Not recorded yet |
 | CI | Every PR runs: TypeScript build/typecheck/tests (domain, verifier, API on PGlite **and** Postgres 16, agent SDK); contract fmt/clippy/unit tests; WASM build + sandbox tests; reproducible WASM build. NEAR tools are installed by [`scripts/install-near-tools.sh`](scripts/install-near-tools.sh) with pinned versions and SHA-256 checks |
 | Owner deployment steps | [docs/DEPLOY_TESTNET.md](docs/DEPLOY_TESTNET.md): contract account and two secrets (Part A), verifier key (Part B), Render Blueprint (Part C) |
 
-### Judge path, once deployed (about 10 minutes, two browser profiles)
+### Judge path (about 10 minutes, two browser profiles)
 
-1. Open the live URL. **Connect wallet** (MyNearWallet, testnet), then **Sign in as …**. Signing in signs a message only; it does not send a transaction.
+1. Open https://settle-9ewd.onrender.com. **Connect wallet** (MyNearWallet, testnet), then **Sign in as …**. Signing in signs a message only; it does not send a transaction.
 2. As the **client**: **New job**. Enter the worker's testnet account and keep the defaults: an API milestone (0.35 NEAR) using the demo verification plan, and a design milestone (0.15 NEAR) with 2 revisions and a 0.075 NEAR protected floor. **Create job and sign create_agreement** (storage deposit; the unused part is refunded).
 3. As the **worker** (second profile or wallet): open the job and click **Accept terms** (signs `accept_terms`).
 4. As the client: **Fund escrow (0.5 NEAR)**. The onchain status becomes `Funded`.
-5. Worker, API milestone: enter commit `demo-broken` and URL `<live-url>/fixture/broken`, then click **Submit work** (signs `submit`). Click **Run verification**. The result is a real **FAIL** (`$.status == "ok"` fails). Open **Evidence**, then **Record onchain**. Nothing becomes payable.
-6. Worker: submit `demo-fixed` with `<live-url>/fixture/fixed`, run verification again, and get a real **PASS**. Click **Record onchain**. After the challenge window (2 minutes by default), click **Finalize after challenge window**, then **Pay out (onchain transfer)**. Check the transfer on testnet.nearblocks.io from the transaction list.
+5. Worker, API milestone: enter commit `demo-broken` and URL `https://settle-9ewd.onrender.com/fixture/broken`, then click **Submit work** (signs `submit`). Click **Run verification**. The result is a real **FAIL** (`$.status == "ok"` fails). Open **Evidence**, then **Record onchain**. Nothing becomes payable.
+6. Worker: submit `demo-fixed` with `https://settle-9ewd.onrender.com/fixture/fixed`, run verification again, and get a real **PASS**. Click **Record onchain**. After the challenge window (2 minutes by default), click **Finalize after challenge window**, then **Pay out (onchain transfer)**. Check the transfer on testnet.nearblocks.io from the transaction list.
 7. Design milestone: the worker submits, and the client clicks **Request revision**. The worker resubmits. Then either the client clicks **Approve and release**, or one party uses **Propose partial settlement** (e.g. 0.075 NEAR) and the other clicks **Accept … settlement**. Pay out and check both transfers.
 8. Agent parity: run `packages/agent-sdk/dist/demo-worker.js` as the worker (instructions are in that file). It uses the same API, does the same FAIL then PASS sequence, and relays the reports with the agent's own key.
 
-### What can be checked today without a deployment
+### Also verifiable without a wallet
 
 Open the latest **CI** run on the PR. The `escrow-sandbox` job log shows the deployed WASM's payout raising the worker's real balance by exactly the milestone amount, and a second payout being rejected. The `typescript` job runs the API → verifier → fixture flow and shows a real FAIL, then a real PASS.
 

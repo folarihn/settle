@@ -6,10 +6,18 @@
  * drives every party through the agent SDK, which signs real testnet transactions.
  * Secrets arrive on stdin as JSON and are never printed:
  *   {"contract": "...testnet", "client": {"accountId","privateKey"}, "agent": {...},
- *    "verifierAccount": "...", "resolverAccount": "...", "verifierSeed": "<64 hex>"}
+ *    "verifierAccount": "...", "resolverAccount": "...", "verifierSeed": "<64 hex>",
+ *    "apiUrl"?: "https://<deployment>", "workerDatabaseUrl"?: "postgres://..."}
+ * With apiUrl, the parties use that deployed API and its hosted demo fixture (/fixture/broken
+ * then /fixture/fixed), and this process acts as a verification worker on workerDatabaseUrl.
+ * Without it, a local API is started and a public GitHub API endpoint is used as the target.
+ * "resumeAgreementId" continues an agreement (with the same milestones) from its challenge
+ * window: finalize, payout, creative revision/approval and partial settlement. It needs no
+ * database access, because these steps go only through the API and the chain.
  * Usage (after `pnpm build`):  <secrets json> | node scripts/testnet-e2e.mjs > report.json
  */
-import { buildApp, createPgliteDb, configFromEnv, drainQueue, migrate, RpcChainReader } from "../apps/api/dist/index.js";
+import { buildApp, createPgDb, createPgliteDb, configFromEnv, drainQueue, JobService, migrate, RpcChainReader, VerificationService } from "../apps/api/dist/index.js";
+import { DEMO_PLAN } from "../apps/fixture-api/dist/index.js";
 import { publicKeyFromSeed } from "../packages/domain/dist/index.js";
 import { SettleAgent } from "../packages/agent-sdk/dist/index.js";
 
@@ -55,14 +63,25 @@ const config = configFromEnv(
   },
   "worker",
 );
-const db = createPgliteDb();
-await migrate(db);
-const { app, verifications } = buildApp({ db, chain: new RpcChainReader(RPC, config.escrowContract), config });
-await app.listen({ port: 0, host: "127.0.0.1" });
-const apiUrl = `http://127.0.0.1:${app.server.address().port}`;
+const live = Boolean(secrets.apiUrl);
+const resume = secrets.resumeAgreementId ?? null;
+const chain = new RpcChainReader(RPC, config.escrowContract);
+const db = resume ? null : live ? createPgDb(secrets.workerDatabaseUrl) : createPgliteDb();
+if (db) await migrate(db);
+let app = null;
+let verifications;
+let apiUrl;
+if (live) {
+  apiUrl = secrets.apiUrl.replace(/\/+$/, "");
+  if (db) verifications = new VerificationService(db, new JobService(db, chain, config), config);
+} else {
+  ({ app, verifications } = buildApp({ db, chain, config }));
+  await app.listen({ port: 0, host: "127.0.0.1" });
+  apiUrl = `http://127.0.0.1:${app.server.address().port}`;
+}
 const runVerifier = () => drainQueue(verifications, { seedHex: secrets.verifierSeed });
 
-const report = { contract: secrets.contract, startedAt: new Date().toISOString(), txs: [], checks: [] };
+const report = { contract: secrets.contract, apiUrl: live ? apiUrl : "local (not exposed)", startedAt: new Date().toISOString(), txs: [], checks: [] };
 const tx = (step, hash) => {
   report.txs.push({ step, hash, explorer: `https://testnet.nearblocks.io/txns/${hash}` });
   log(`tx ${step}: ${hash}`);
@@ -78,14 +97,31 @@ try {
   const agent = await SettleAgent.connect({ apiUrl, accountId: secrets.agent.accountId, privateKey: secrets.agent.privateKey });
   log("both parties logged in with NEP-413 signatures checked against testnet access keys");
 
-  // A plan against a real public API, locked into the agreement before funding.
-  const plan = {
-    kind: "HTTP_API", version: 1, method: "GET", path: "/", expectedStatus: 200,
-    assertions: [{ op: "type", path: "$.current_user_url", type: "string" }],
-    timeoutMs: 10000, maxResponseBytes: 65536,
-  };
+  // The verification plan is locked into the agreement before funding.
+  const plan = live
+    ? DEMO_PLAN
+    : {
+        kind: "HTTP_API", version: 1, method: "GET", path: "/", expectedStatus: 200,
+        assertions: [{ op: "type", path: "$.current_user_url", type: "string" }],
+        timeoutMs: 10000, maxResponseBytes: 65536,
+      };
+  const targets = live
+    ? { failing: `${apiUrl}/fixture/broken`, passing: `${apiUrl}/fixture/fixed` }
+    : { failing: "https://api.github.com/settle-demo-missing", passing: "https://api.github.com" };
+  report.targets = targets;
   const amounts = { api: (NEAR * 3n) / 10n, design: NEAR / 10n, copy: NEAR / 10n };
   const total = amounts.api + amounts.design + amounts.copy;
+  const ms = async (i) => (await view("get_agreement", { agreement_id: id })).milestones[i];
+  const syncUntil = async (pred) => {
+    for (let i = 0; i < 10; i++) {
+      const s = await client.sync(id);
+      if (pred(s)) return s;
+      await sleep(1500);
+    }
+    return client.sync(id);
+  };
+  let id = resume;
+  if (!resume) {
   const job = await client.createJob({
     worker: { kind: "AGENT", nearAccountId: secrets.agent.accountId },
     totalYocto: total.toString(),
@@ -100,8 +136,7 @@ try {
     fundingDeadline: Date.now() + 3600_000,
     expiresAt: Date.now() + 24 * 3600_000,
   });
-  const id = job.id;
-  report.agreementId = id;
+  id = job.id;
   log(`agreement ${id}`);
 
   tx("create_agreement (client)", await client.execute(job.calls.createAgreement));
@@ -109,20 +144,11 @@ try {
   const heldBefore = BigInt(await view("get_total_held", {}));
   tx("fund (client)", await client.execute(job.calls.fund));
   // The API mirrors chain state at "final" finality, a couple of blocks behind inclusion.
-  const syncUntil = async (pred) => {
-    for (let i = 0; i < 10; i++) {
-      const s = await client.sync(id);
-      if (pred(s)) return s;
-      await sleep(1500);
-    }
-    return client.sync(id);
-  };
   const synced = await syncUntil((s) => s.job.state.status === "FUNDED");
   check("contract terms hash equals the agreed terms", synced.chain.termsMatch === true);
   check("offchain mirror shows FUNDED after the onchain fund", synced.job.state.status === "FUNDED");
   check("escrow holds exactly the total", BigInt(await view("get_total_held", {})) - heldBefore === total, near(total));
 
-  const ms = async (i) => (await view("get_agreement", { agreement_id: id })).milestones[i];
   const verify = async (label, uri) => {
     tx(`submit ${label} (agent)`, (await agent.actOnChain(id, { type: "SUBMIT", milestoneId: "api", artifactHash: `commit-${label}`, uri })).txHash);
     const queued = await agent.requestVerification(id, "api");
@@ -133,13 +159,13 @@ try {
     return { done, ev };
   };
 
-  const fail = await verify("failing", "https://api.github.com/settle-demo-missing");
+  const fail = await verify("failing", targets.failing);
   check("failing endpoint produced FAIL", fail.done.outcome === "FAIL", fail.ev.evidence.checks.filter((c) => !c.ok).map((c) => `${c.check}: ${c.detail}`).join("; "));
   check("evidence matches the signed report", fail.ev.matchesReport === true);
   const afterFail = await ms(0);
   check("FAIL released nothing onchain", afterFail.status === "Pending" && afterFail.allocated === false, `onchain status ${afterFail.status}`);
 
-  const pass = await verify("passing", "https://api.github.com");
+  const pass = await verify("passing", targets.passing);
   check("passing endpoint produced PASS", pass.done.outcome === "PASS", `submission #${pass.done.submissionSeq}`);
   const afterPass = await ms(0);
   check("PASS opens the challenge window, nothing payable yet", afterPass.status === "VerifiedPendingChallenge" && !afterPass.allocated);
@@ -148,6 +174,12 @@ try {
 
   log("waiting for the 60 s challenge window to pass onchain...");
   await sleep(75_000);
+  } else {
+    report.resumed = true;
+    const m = await ms(0);
+    check("resumed agreement is in its challenge window after a real PASS", m.status === "VerifiedPendingChallenge" && !m.allocated, `onchain status ${m.status}`);
+  }
+  report.agreementId = id;
   tx("finalize_challenge (agent)", (await agent.actOnChain(id, { type: "FINALIZE_CHALLENGE", milestoneId: "api" })).txHash);
 
   const pay = async (milestoneId) => {
@@ -201,7 +233,7 @@ try {
   log("ERROR", report.error);
 } finally {
   report.finishedAt = new Date().toISOString();
-  await app.close();
-  await db.close();
+  if (app) await app.close();
+  if (db) await db.close();
   console.log(JSON.stringify(report, null, 2));
 }

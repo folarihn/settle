@@ -250,3 +250,16 @@ Bugs this run found, all fixed and deployed during the run:
 - **Payout label:** "Pay out" was confusing for the worker. It now reads **Claim payment** for the worker and **Release payment** for the client.
 
 Zero-deposit actions (finalize, payout, submit) were approved by Meteor's function-call key for the escrow contract without a pop-up; deposit-bearing ones (create, fund) asked for approval.
+
+## Run 7: automatic record, finalize and payout (PASS)
+
+After `d9ab8b8` (contract redeployed by tag `testnet-redeploy-2`, code hash `HzVnBSNje4vwqo28MheaHxxHsWTYQS235P64okANLJ4a` matching the build; [workflow run](https://github.com/folarihn/settle/actions/runs/41699755242)), the verifier service runs a keeper with its own testnet account. Agreement `job_wIF_xx9zP1N7rRzj` (0.02 NEAR). The worker only submitted; no party recorded, finalized or paid:
+
+| Time (UTC) | Onchain (`get_agreement`, final) |
+| --- | --- |
+| 19:08:17 | worker submits `/fixture/fixed` ([`8EqGa49x…`](https://testnet.nearblocks.io/txns/8EqGa49xajei1r8eRypHWUq3V3VGt3qzGUkiE28NSQaf)); verification PASS 1 s later |
+| 19:08:24 | `VerifiedPendingChallenge`, outcome `Pass` — recorded by the keeper |
+| 19:09:30 | `Claimable` — finalized by the keeper after the 60 s window |
+| 19:09:46 | `Paid`, worker paid 0.02 NEAR — payout triggered by the keeper; offchain `COMPLETED` |
+
+**89 s from submission to payment.**

@@ -42,6 +42,19 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
     load().catch((e: Error) => setError(e.message));
   }, [load]);
 
+  // Right after create_agreement the chain read can trail by a few blocks; re-check briefly.
+  const awaitingChain = !!job && job.state.status === "DRAFT" && !chain?.agreement && !chain?.error;
+  useEffect(() => {
+    if (!awaitingChain) return;
+    let tries = 0;
+    const t = setInterval(() => {
+      tries += 1;
+      if (tries > 10) clearInterval(t);
+      load().catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(t);
+  }, [awaitingChain, load]);
+
   // While a verification is queued or running, poll for its result.
   useEffect(() => {
     if (!verifications.some((v) => v.status === "QUEUED" || v.status === "RUNNING")) return;
@@ -71,7 +84,7 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e instanceof Error ? e.message : String(e)));
     } finally {
       setBusy(null);
       await load().catch(() => undefined);
@@ -140,10 +153,13 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
 
         {job.state.status === "DRAFT" && (
           <div className="actions">
-            {is("client") && !onchain && job.calls.createAgreement && (
+            {is("client") && !onchain && job.calls.createAgreement && !txs.some((t) => t.label === "create_agreement") && (
               <button disabled={!!busy} onClick={() => signOnly("create_agreement", job.calls.createAgreement!)}>
                 Create onchain (storage deposit)
               </button>
+            )}
+            {!onchain && txs.some((t) => t.label === "create_agreement") && (
+              <span className="muted">Waiting for the network to confirm create_agreement… this page refreshes itself.</span>
             )}
             {is("worker") && !job.state.acceptedBy.worker && (
               <button disabled={!!busy || !onchain} onClick={() => act("accept_terms", { type: "ACCEPT_TERMS", termsHash: job.state.termsHash })}>
@@ -430,6 +446,16 @@ function MilestoneCard({ m, terms, onchainStatus, job, verifications, busy, act,
       {evidence !== null && <EvidenceView data={evidence} onClose={() => setEvidence(null)} />}
     </section>
   );
+}
+
+/** Turns raw contract/wallet errors into something a person can act on. */
+function friendlyError(message: string): string {
+  if (/agreement id already exists/i.test(message)) {
+    return "This agreement is already created onchain (your earlier transaction went through). Reload the page to continue.";
+  }
+  if (/challenge period has not ended/i.test(message)) return "The challenge window is still open. Wait until the end time shown, then reload and try again.";
+  if (/User closed the window|User rejected|rejected/i.test(message)) return "The wallet request was cancelled. Nothing was sent.";
+  return message;
 }
 
 let lastWake = 0;

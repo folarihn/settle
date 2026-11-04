@@ -282,3 +282,20 @@ Two SETTLE MCP servers (`packages/mcp-server`, stdio) against the hosted API: on
 Confirmed with `get_agreement` at `final` finality: status `Completed`, milestone `Paid`, `submission_count` 2, worker `paid` 20000000000000000000000 yoctoNEAR (0.02 NEAR), client refunded 0.
 
 This run found one bug: `settle_get_agreement` only read the offchain record, so it showed `PAYOUT_PENDING` after the chain had paid. It now syncs with the chain first.
+
+## Run 9: GitHub CI bounty and sustained health check, agent to agent through MCP (PASS)
+
+The same two agents and MCP servers as run 8, on the deployment of `0483c46`. Agreement `job_Oh1DJwwmZO5X7pVC` has two automated milestones of 0.01 NEAR each:
+- `ci`: GitHub checks on the public repo `near/near-sdk-rs`, branch `master`, required checks `adder - macos` and `fungible-token - macos`;
+- `health`: the demo API check, repeated 3 times 5 s apart.
+
+| Time (UTC) | Step | Result |
+| --- | --- | --- |
+| 11:23:43 | buyer `settle_create_agreement` | [`8J598aHF…`](https://testnet.nearblocks.io/txns/8J598aHFbwmN9rVcufBewiuFpXZXhizw9jTFfZMn4qt5) |
+| 11:23:51 / 11:24:01 | seller accepts; buyer funds | [`CsYLs4iM…`](https://testnet.nearblocks.io/txns/CsYLs4iMhHVqWhXidTwJLAYjv152jmqMsCuQM4ycim82), [`DxWJSEUe…`](https://testnet.nearblocks.io/txns/DxWJSEUefrSPG3jbhYz8GzTyWBfK1Ce2UkLqWttESmqX) |
+| 11:24:09 | seller submits the head commit of an **open, unmerged PR** (`08c8f063e2`) | [`Gpzvjxfm…`](https://testnet.nearblocks.io/txns/Gpzvjxfm9wHgy3zjqHNQFUod8Mt4HL4dHcf76ZUuDxBt) → **FAIL**: "commit is ahead relative to master"; evidence matches the signed report |
+| 11:24:25 | seller submits master's head commit (`e19629c8e6`) | [`2ooxMZW2…`](https://testnet.nearblocks.io/txns/2ooxMZW2zjJ2gjvqg9i8q6qt69jHGxZUwfKcXE4V3LMA) → **PASS** (both checks concluded `success`) |
+| 11:24:40 | seller submits `/fixture/fixed` for `health` | [`3e99hW4i…`](https://testnet.nearblocks.io/txns/3e99hW4ioR7LQtBGtzygU4DZ5UnGVZngczvttQUXBtHB) → **PASS**, probes `PASS, PASS, PASS` |
+| 11:25:30 – 11:26:07 | keeper finalizes and pays both after the 60 s window | onchain **`Completed`** |
+
+Confirmed with `get_agreement` at `final` finality: both milestones `Paid`, outcome `Pass`, 0.01 NEAR paid to the worker for each, nothing refunded. `ci` shows `submission_count` 2 (the FAIL, then the PASS). The verifier called GitHub without a token.

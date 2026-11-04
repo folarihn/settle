@@ -36,11 +36,12 @@ The server is not published to npm yet; it runs from a checkout of this reposito
 | `settle_whoami` | anyone | Shows your account, the network, the contract, your spending limit and the demo deployments. |
 | `settle_list_agreements` | anyone | Lists the agreements where you are client, worker or resolver. |
 | `settle_get_agreement` | anyone | Syncs with the chain, then returns the full status and **`nextSteps` for your role**. |
-| `settle_create_agreement` | client | Hires a worker, human or agent. Defines milestones (`api_check` or `human_review`), amounts in NEAR and the challenge window, then publishes the agreement onchain. |
+| `settle_create_agreement` | client | Hires a worker, human or agent. Defines milestones, amounts in NEAR and the challenge window, then publishes the agreement onchain. Milestone types: `api_check` (optionally `sustained`), `github_ci` and `human_review`. |
 | `settle_publish_agreement` | client | Resends `create_agreement` if creating it failed earlier. |
 | `settle_accept_agreement` | worker | Accepts the exact terms (signed onchain). |
 | `settle_fund_agreement` | client | Deposits exactly the agreed total into escrow. |
-| `settle_submit_work` | worker | Submits a milestone. For an API check, it also waits for the independent verifier's PASS or FAIL. |
+| `settle_submit_work` | worker | Submits a milestone. For an API check or GitHub CI milestone, it also waits for the independent verifier's result. |
+| `settle_request_verification` | worker or client | Runs the verifier again, for example after GitHub CI was still running (INCONCLUSIVE). |
 | `settle_check_verification` | anyone | Shows a verification's outcome and evidence. With `record=true` it relays the result onchain if the contract is still waiting for it. |
 | `settle_review` | client | Approves, requests a revision, opens a dispute (human review), or challenges a PASS during the challenge window (API check). |
 | `settle_settlement` | either party | Proposes or accepts a partial split on a human-review milestone. |
@@ -57,7 +58,21 @@ Safety built into the server:
 
 On the hosted deployment the verifier service records results, finalizes after the challenge window and pays automated milestones by itself. A worker agent normally only accepts and submits.
 
-Verified live on testnet: one agent hired another using these tools only, from create to paid ([TESTNET_RUN.md](TESTNET_RUN.md), run 8).
+Verified live on testnet: one agent hired another using these tools only, from create to paid ([TESTNET_RUN.md](TESTNET_RUN.md), run 8). In run 9 the same agents ran a GitHub CI bounty on `near/near-sdk-rs` (an unmerged PR commit failed, then the merged commit passed) and a sustained health check.
+
+## What the verifier can check
+
+All checks are fixed in the agreement before funding, and bound to it by hash. The verifier never runs the worker's code.
+
+| Milestone | The worker submits | PASS when |
+| --- | --- | --- |
+| `api_check` | The base URL of the deployed API | One HTTP request gets the agreed status, and every JSON check holds. |
+| `api_check` with `sustained` | The base URL | The same check passes on every probe, for example 5 probes 15 s apart. The whole run takes at most 2 minutes. |
+| `github_ci` | The full commit SHA | The commit is already on the agreed branch, and every named check run or commit status of that commit concluded `success`. |
+
+The branch requirement matters. A pull request's CI runs the PR's own workflow files, so an unmerged commit could change the checks that judge it. Requiring the commit to be on the branch means the client's own merge rules decide.
+
+While CI is still running, the result is INCONCLUSIVE, never PASS; verify again later. Only PASS and FAIL are recorded onchain. The reasoning is in [ADR 0004](adr/0004-github-and-sustained-checks.md).
 
 ## Webhooks
 

@@ -63,7 +63,7 @@ export function workerWaker(baseUrl: string, log?: WakeLog, everyMs = 10_000, no
 
 export async function runWorkerLoop(
   verifications: VerificationService,
-  seedHex: string,
+  verifyOpts: VerifyOptions,
   log: { error: (o: unknown, msg?: string) => void },
   idleMs = 1000,
   keeper?: { tick: (jobId?: string) => Promise<number> },
@@ -73,7 +73,7 @@ export async function runWorkerLoop(
   let lastKeep = 0;
   for (;;) {
     try {
-      const processed = await drainQueue(verifications, { seedHex });
+      const processed = await drainQueue(verifications, verifyOpts);
       if (keeper && (processed > 0 || Date.now() - lastKeep >= keeperEveryMs)) {
         lastKeep = Date.now();
         await keeper.tick();

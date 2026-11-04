@@ -39,4 +39,7 @@ if (relayerKey) {
 if (process.env.PORT) startWakeServer(Number(process.env.PORT));
 console.log(`verification worker started for verifier key ${config.verifierPublicKey.slice(0, 12)}...`);
 console.log(keeper ? `automatic record/finalize/payout enabled as ${config.verifierAccount}` : "automatic record/finalize/payout disabled");
-await runWorkerLoop(new VerificationService(db, jobs, config), seed, { error: (o, msg) => console.error(msg, o) }, 1000, keeper, 15_000, new WebhookService(db));
+// Optional read-only GitHub token for GITHUB_CHECKS plans (public repos work without one, at a lower rate limit).
+const githubToken = process.env.SETTLE_GITHUB_TOKEN;
+const verifyOpts = { seedHex: seed, ...(githubToken ? { githubToken } : {}) };
+await runWorkerLoop(new VerificationService(db, jobs, config), verifyOpts, { error: (o, msg) => console.error(msg, o) }, 1000, keeper, 15_000, new WebhookService(db));

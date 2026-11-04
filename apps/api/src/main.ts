@@ -19,7 +19,7 @@ const { app, verifications } = buildApp({ db, chain: new RpcChainReader(config.r
 // With Postgres, run `node dist/worker-main.js` as its own process instead.
 if (!config.databaseUrl && process.env.SETTLE_VERIFIER_SEED) {
   app.log.warn("running the verifier in the API process (PGlite demo mode); do not do this in production");
-  void runWorkerLoop(verifications, process.env.SETTLE_VERIFIER_SEED, app.log);
+  void runWorkerLoop(verifications, { seedHex: process.env.SETTLE_VERIFIER_SEED }, app.log);
 }
 
 await app.listen({ port: config.port, host: "0.0.0.0" });

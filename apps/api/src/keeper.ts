@@ -100,10 +100,15 @@ export class Keeper {
     return sent;
   }
 
+  /**
+   * Only definitive outcomes are relayed. INCONCLUSIVE and RUNNER_ERROR change nothing onchain
+   * (the milestone stays Submitted for a re-run), so relaying them would only burn gas.
+   */
   private async signedReportFor(jobId: string, milestoneId: string, seq: number) {
     const { rows } = await this.db.query<{ report: VerificationReport; signature: string }>(
       `SELECT report, signature FROM verifications
        WHERE job_id = $1 AND milestone_id = $2 AND submission_seq = $3 AND status = 'DONE' AND report IS NOT NULL
+         AND report->>'outcome' IN ('PASS', 'FAIL')
        ORDER BY updated_at DESC LIMIT 1`,
       [jobId, milestoneId, seq],
     );

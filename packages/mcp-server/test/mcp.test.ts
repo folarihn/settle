@@ -1,3 +1,4 @@
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -119,6 +120,48 @@ describe("MCP server: an AI agent hires another AI agent", () => {
     const paid = await seller.call("settle_claim_payment", { agreementId: id, milestoneId: "report" });
     expect(paid.isError).toBe(false);
     expect(sellerTx.at(-1)).toMatchObject({ methodName: "payout", args: { agreement_id: id, milestone_id: "report" }, deposit: "0" });
+  });
+
+  it("pays a GitHub CI bounty: INCONCLUSIVE while CI runs, PASS once the merged commit's checks succeed", async () => {
+    let checks = [{ id: 1, name: "test", status: "in_progress", conclusion: null as string | null }];
+    const github: Server = createServer((req, res) => {
+      const url = req.url ?? "";
+      const body = url.includes("/compare/") ? { status: "identical" } : url.includes("/check-runs") ? { check_runs: checks } : { statuses: [] };
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+    });
+    await new Promise<void>((r) => github.listen(0, "127.0.0.1", r));
+    const base = `http://127.0.0.1:${(github.address() as AddressInfo).port}`;
+    h.policy.insecureTestOrigins.push(base);
+    h.verifyDeps.githubApiBase = base;
+    try {
+      const buyer = await mcpAgent(BUYER, []);
+      const seller = await mcpAgent(SELLER, []);
+      const id = (
+        await buyer.call("settle_create_agreement", {
+          worker: SELLER,
+          milestones: [{ type: "github_ci", id: "fix", title: "Fix the flaky test", amountNear: "0.1", repo: "acme/widget", requiredChecks: ["test"] }],
+        })
+      ).json.created as string;
+      const offer = (await seller.call("settle_get_agreement", { agreementId: id })).json;
+      expect(offer.milestones[0]).toMatchObject({ kind: "GitHub CI checks", check: { repo: "acme/widget", branch: "main", requiredChecks: ["test"] } });
+      await seller.call("settle_accept_agreement", { agreementId: id });
+      await buyer.call("settle_fund_agreement", { agreementId: id });
+      expect((await seller.call("settle_get_agreement", { agreementId: id })).json.nextSteps.join(" ")).toContain("full commit SHA");
+
+      const sha = "b".repeat(40);
+      const first = await seller.call("settle_submit_work", { agreementId: id, milestoneId: "fix", artifactHash: sha });
+      expect(first.json.outcome).toBe("INCONCLUSIVE");
+      expect(first.json.next).toContain("settle_request_verification");
+
+      checks = [{ id: 1, name: "test", status: "completed", conclusion: "success" }];
+      const again = await seller.call("settle_request_verification", { agreementId: id, milestoneId: "fix" });
+      expect(again.json.outcome).toBe("PASS");
+      expect((await seller.call("settle_get_agreement", { agreementId: id })).json.milestones[0].status).toBe("VERIFIED_PENDING_CHALLENGE");
+    } finally {
+      delete h.verifyDeps.githubApiBase;
+      github.closeAllConnections();
+      await new Promise((r) => github.close(r));
+    }
   });
 
   it("refuses agreements above the agent's spending limit before anything is created or signed", async () => {

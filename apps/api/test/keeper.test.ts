@@ -55,4 +55,29 @@ describe("keeper: automatic record, finalize and payout", () => {
     // A human-review milestone waiting on the client is never touched.
     expect(sent.filter((c) => (c.args as { milestone_id?: string }).milestone_id === "design")).toHaveLength(0);
   });
+
+  it("never relays an inconclusive report: it changes nothing onchain and would only burn gas", async () => {
+    const client = as(h, await login(h, "client.testnet"));
+    const agent = as(h, await login(h, WORKER, "AGENT"));
+    const job = (await client.post("/v1/jobs", jobInput())).json();
+    await agent.post(`/v1/jobs/${job.id}/actions`, { type: "ACCEPT_TERMS", termsHash: job.state.termsHash });
+    const chainView = onchainFunded((await client.get(`/v1/jobs/${job.id}`)).json().job.state);
+    h.chain.agreements.set(job.id, chainView);
+    await client.post(`/v1/jobs/${job.id}/sync`);
+    // A deployment that refuses connections: no answer, so the verifier signs INCONCLUSIVE.
+    h.policy.insecureTestOrigins.push("http://127.0.0.1:1");
+    await agent.post(`/v1/jobs/${job.id}/actions`, { type: "SUBMIT", milestoneId: "api", artifactHash: "c1", uri: "http://127.0.0.1:1" });
+    const v = (await agent.post(`/v1/jobs/${job.id}/milestones/api/verifications`)).json();
+    await h.runVerifier();
+    expect((await agent.get(`/v1/verifications/${v.id}`)).json().outcome).toBe("INCONCLUSIVE");
+
+    const sent: ContractCall[] = [];
+    const relayer: Relayer = { accountId: config.verifierAccount, send: async (c) => (sent.push(c), "tx") };
+    const keeper = new Keeper(h.db, new JobService(h.db, h.chain, config), h.chain, relayer, config, { info: () => undefined, warn: () => undefined });
+    const api = chainView.milestones[0]!;
+    api.status = "Submitted";
+    api.submission = { seq: 1, artifact_hash: "c1", submitted_at_ms: Date.now() };
+    expect(await keeper.tick(job.id)).toBe(0);
+    expect(sent).toHaveLength(0);
+  });
 });

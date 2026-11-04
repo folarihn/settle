@@ -50,6 +50,8 @@ export interface Harness {
   fixtureOrigin: string;
   /** Outbound policy used by the verifier and webhooks; tests add their local origins to it. */
   policy: { insecureTestOrigins: string[]; testAddresses: string[] };
+  /** Extra verifier options for every run, e.g. a local GitHub API (`githubApiBase`). */
+  verifyDeps: { githubApiBase?: string };
   runVerifier: () => Promise<number>;
   close: () => Promise<void>;
 }
@@ -74,6 +76,7 @@ export async function startHarness(db?: Db, overrides: Partial<Config> = {}): Pr
   await new Promise<void>((r) => fixture.listen(0, "127.0.0.1", r));
   const fixtureOrigin = `http://127.0.0.1:${(fixture.address() as AddressInfo).port}`;
   policy.insecureTestOrigins.push(fixtureOrigin);
+  const verifyDeps: Harness["verifyDeps"] = {};
 
   return {
     db: database,
@@ -82,7 +85,8 @@ export async function startHarness(db?: Db, overrides: Partial<Config> = {}): Pr
     verifications,
     fixtureOrigin,
     policy,
-    runVerifier: () => drainQueue(verifications, { seedHex: VERIFIER_SEED, policy }),
+    verifyDeps,
+    runVerifier: () => drainQueue(verifications, { seedHex: VERIFIER_SEED, policy, ...verifyDeps }),
     close: async () => {
       await app.close();
       fixture.closeAllConnections();

@@ -20,11 +20,22 @@ export interface RunResult {
   bodySha256: string | null;
   checks: CheckResult[];
   error: { kind: string; message: string } | null;
+  /** Sustained-health plans: one entry per probe, in order. */
+  probes?: { at: number; outcome: VerificationOutcome; status: number | null; latencyMs: number | null }[];
+  /** GitHub plans: what was checked. */
+  github?: { repo: string; commit: string; branch: string; onBranch: boolean | null };
 }
 
 export interface RunDeps {
   policy?: NetworkPolicy;
   resolve?: Resolver;
+  /** Waits between sustained-health probes; tests replace it. */
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+  /** Optional read-only token for the GitHub API (raises its rate limit); never needed for public repos. */
+  githubToken?: string;
+  /** GitHub API origin; tests point it at a local server. */
+  githubApiBase?: string;
 }
 
 /**
@@ -36,6 +47,27 @@ export interface RunDeps {
  * - RUNNER_ERROR: the verifier itself broke.
  */
 export async function runPlan(plan: HttpVerificationPlan, baseUrl: string, deps: RunDeps = {}): Promise<RunResult> {
+  const repeat = plan.repeat;
+  if (!repeat) return runOnce(plan, baseUrl, deps);
+  // Sustained health: every probe must pass. Stops at the first probe that does not, and
+  // reports that probe's outcome (FAIL is definitive; no response stays INCONCLUSIVE).
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const now = deps.now ?? Date.now;
+  const probes: NonNullable<RunResult["probes"]> = [];
+  const checks: CheckResult[] = [];
+  let last!: RunResult;
+  for (let i = 1; i <= repeat.count; i++) {
+    if (i > 1) await sleep(repeat.intervalMs);
+    const at = now();
+    last = await runOnce(plan, baseUrl, deps);
+    probes.push({ at, outcome: last.outcome, status: last.status, latencyMs: last.latencyMs });
+    checks.push(...last.checks.map((c) => ({ ...c, check: `probe ${i}/${repeat.count}: ${c.check}` })));
+    if (last.outcome !== "PASS") break;
+  }
+  return { ...last, checks, probes };
+}
+
+async function runOnce(plan: HttpVerificationPlan, baseUrl: string, deps: RunDeps): Promise<RunResult> {
   const policy = deps.policy ?? DEFAULT_POLICY;
   const result: RunResult = {
     outcome: "RUNNER_ERROR",

@@ -46,9 +46,11 @@ const ROUTES: Record<string, { status: number; body: string; headers?: Record<st
 
 export async function startFixture(): Promise<Fixture> {
   let hits = 0;
+  let flaky = 0;
   const server: Server = createServer((req, res) => {
     hits += 1;
-    const route = ROUTES[req.url ?? ""];
+    // Healthy on the first request, then down: what a single check would miss.
+    const route = req.url === "/flaky/health" ? (flaky++ === 0 ? ROUTES["/good/health"] : ROUTES["/error/health"]) : ROUTES[req.url ?? ""];
     if (route === "hang") return; // never respond
     if (!route) {
       res.writeHead(404).end();

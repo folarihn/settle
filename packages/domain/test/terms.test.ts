@@ -29,8 +29,21 @@ describe("agreement terms", () => {
 
   it("changes the plan hash when any acceptance check changes", () => {
     const t = parseTerms(sampleTerms());
-    const plan = t.milestones[0]!.type === "AUTOMATED" ? t.milestones[0]!.verificationPlan : null;
+    const m = t.milestones[0]!;
+    const plan = m.type === "AUTOMATED" && m.verificationPlan.kind === "HTTP_API" ? m.verificationPlan : null;
     expect(computePlanHash({ ...plan!, expectedStatus: 201 })).not.toBe(computePlanHash(plan!));
+  });
+
+  it("accepts GitHub-checks and sustained-health plans, each with its own plan hash", () => {
+    const http = structuredClone(sampleTerms()) as any;
+    http.milestones[0].verificationPlan.repeat = { count: 5, intervalMs: 10_000 };
+    const gh = structuredClone(sampleTerms()) as any;
+    gh.milestones[0].verificationPlan = { kind: "GITHUB_CHECKS", version: 1, repo: "near/near-sdk-rs", branch: "main", requiredChecks: ["test"] };
+    const hashes = [sampleTerms(), http, gh].map((t) => {
+      const m = parseTerms(t).milestones[0]!;
+      return m.type === "AUTOMATED" ? computePlanHash(m.verificationPlan) : "";
+    });
+    expect(new Set(hashes).size).toBe(3);
   });
 
   it.each([
@@ -51,6 +64,12 @@ describe("agreement terms", () => {
     ["an invalid NEAR account", (t: any) => (t.client.nearAccountId = "Bad..Account"), "invalid NEAR account"],
     ["unknown fields", (t: any) => (t.autoApprove = true), "Unrecognized"],
     ["an unsupported JSON path", (t: any) => (t.milestones[0].verificationPlan.assertions[0].path = "status"), "JSON path"],
+    ["sustained-health probes longer than two minutes", (t: any) => (t.milestones[0].verificationPlan.repeat = { count: 10, intervalMs: 20_000 }), "120 seconds"],
+    ["a single sustained-health probe", (t: any) => (t.milestones[0].verificationPlan.repeat = { count: 1, intervalMs: 5000 }), "count"],
+    ["a GitHub plan without a branch", (t: any) => (t.milestones[0].verificationPlan = { kind: "GITHUB_CHECKS", version: 1, repo: "o/r", requiredChecks: ["test"] }), "branch"],
+    ["a GitHub plan with no required checks", (t: any) => (t.milestones[0].verificationPlan = { kind: "GITHUB_CHECKS", version: 1, repo: "o/r", branch: "main", requiredChecks: [] }), "requiredChecks"],
+    ["a GitHub repo that is not owner/name", (t: any) => (t.milestones[0].verificationPlan = { kind: "GITHUB_CHECKS", version: 1, repo: "https://github.com/o/r", branch: "main", requiredChecks: ["test"] }), "owner/name"],
+    ["an unknown plan kind", (t: any) => (t.milestones[0].verificationPlan.kind = "SHELL"), "kind"],
   ])("rejects %s", (_name, mutate, expected) => {
     expect(rejection(mutate)).toContain(expected);
   });

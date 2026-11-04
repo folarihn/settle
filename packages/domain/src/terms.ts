@@ -41,9 +41,40 @@ export const HttpVerificationPlan = z
     timeoutMs: z.number().int().min(100).max(30_000),
     maxResponseBytes: z.number().int().min(1).max(1_048_576),
     maxLatencyMs: z.number().int().min(1).max(30_000).optional(),
+    /**
+     * Sustained health: run the same request `count` times, `intervalMs` apart; every probe
+     * must pass. Bounded to two minutes so one verification never holds the worker for long.
+     */
+    repeat: z
+      .object({ count: z.number().int().min(2).max(20), intervalMs: z.number().int().min(1000).max(60_000) })
+      .strict()
+      .refine((r) => (r.count - 1) * r.intervalMs <= 120_000, "repeat must finish within 120 seconds")
+      .optional(),
   })
   .strict();
 export type HttpVerificationPlan = z.infer<typeof HttpVerificationPlan>;
+
+const CheckName = z.string().trim().min(1).max(200);
+
+/**
+ * Continuous-integration checks on GitHub. The submission's artifact hash is the commit SHA.
+ * PASS needs the commit to be on `branch` (so the client's own merge rules apply: a pull
+ * request cannot rewrite the workflow that judges it) and every required check run or
+ * commit status to have succeeded.
+ */
+export const GithubChecksPlan = z
+  .object({
+    kind: z.literal("GITHUB_CHECKS"),
+    version: z.literal(1),
+    repo: z.string().regex(/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/, "repo must be owner/name"),
+    branch: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\/-]+$/, "invalid branch name"),
+    requiredChecks: z.array(CheckName).min(1).max(20),
+  })
+  .strict();
+export type GithubChecksPlan = z.infer<typeof GithubChecksPlan>;
+
+export const VerificationPlan = z.discriminatedUnion("kind", [HttpVerificationPlan, GithubChecksPlan]);
+export type VerificationPlan = z.infer<typeof VerificationPlan>;
 
 const MilestoneId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "milestone id must be a lowercase slug");
 
@@ -57,7 +88,7 @@ export const AutomatedMilestoneTerms = z
   .object({
     ...MilestoneBase,
     type: z.literal("AUTOMATED"),
-    verificationPlan: HttpVerificationPlan,
+    verificationPlan: VerificationPlan,
   })
   .strict();
 
@@ -163,4 +194,4 @@ export function parseTerms(input: unknown): AgreementTerms {
 }
 
 export const computeTermsHash = (terms: AgreementTerms): string => hashCanonical(terms);
-export const computePlanHash = (plan: HttpVerificationPlan): string => hashCanonical(plan);
+export const computePlanHash = (plan: VerificationPlan): string => hashCanonical(plan);

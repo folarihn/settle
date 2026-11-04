@@ -36,6 +36,20 @@ const ApiCheckMilestone = z.object({
     .optional()
     .describe('JSON checks on the response, e.g. {"op":"equals","path":"$.status","value":"ok"}; ops: exists, equals, type'),
   timeoutMs: z.number().int().optional(),
+  sustained: z
+    .object({ probes: z.number().int().min(2).max(20), intervalSeconds: z.number().int().min(1).max(60) })
+    .optional()
+    .describe("Sustained health: repeat the check this many times, this far apart (at most 2 minutes in total); every probe must pass"),
+});
+
+const GithubCiMilestone = z.object({
+  type: z.literal("github_ci"),
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
+  title: z.string().min(1).max(200),
+  amountNear: z.string(),
+  repo: z.string().describe("GitHub repository as owner/name"),
+  branch: z.string().optional().describe("Branch the commit must be merged into (default main)"),
+  requiredChecks: z.array(z.string().min(1)).min(1).max(20).describe('Names of CI check runs or commit statuses that must succeed, e.g. ["test"]'),
 });
 
 const HumanReviewMilestone = z.object({
@@ -48,7 +62,7 @@ const HumanReviewMilestone = z.object({
   guaranteedNear: z.string().optional().describe("Minimum the worker keeps once something is delivered, even if disputed"),
 });
 
-type MilestoneInput = z.infer<typeof ApiCheckMilestone> | z.infer<typeof HumanReviewMilestone>;
+type MilestoneInput = z.infer<typeof ApiCheckMilestone> | z.infer<typeof GithubCiMilestone> | z.infer<typeof HumanReviewMilestone>;
 
 const ok = (data: unknown): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(data, null, 2) }] });
 const fail = (message: string): CallToolResult => ({ content: [{ type: "text", text: message }], isError: true });
@@ -99,8 +113,18 @@ export async function createSettleMcpServer(agent: SettleAgent, opts: SettleMcpO
         partialCompensation: m.guaranteedNear ? { condition: "DELIVERABLE_SUBMITTED", floorYocto: nearToYocto(m.guaranteedNear) } : null,
       };
     }
+    if (m.type === "github_ci") {
+      return {
+        id: m.id,
+        title: m.title,
+        type: "AUTOMATED",
+        amountYocto,
+        verificationPlan: { kind: "GITHUB_CHECKS", version: 1, repo: m.repo, branch: m.branch ?? "main", requiredChecks: m.requiredChecks },
+      };
+    }
+    const repeat = m.sustained ? { repeat: { count: m.sustained.probes, intervalMs: m.sustained.intervalSeconds * 1000 } } : {};
     const plan = m.useDemoPlan
-      ? config.demoPlan
+      ? { ...(config.demoPlan as object), ...repeat }
       : {
           kind: "HTTP_API",
           version: 1,
@@ -111,8 +135,31 @@ export async function createSettleMcpServer(agent: SettleAgent, opts: SettleMcpO
           assertions: m.assertions ?? [],
           timeoutMs: m.timeoutMs ?? 10_000,
           maxResponseBytes: 65_536,
+          ...repeat,
         };
     return { id: m.id, title: m.title, type: "AUTOMATED", amountYocto, verificationPlan: plan };
+  };
+
+  /** Queues a verification of the current submission and waits for its outcome (a timeout is reported, never treated as a result). */
+  const verifyAndWait = async (agreementId: string, milestoneId: string) => {
+    const queued = await agent.requestVerification(agreementId, milestoneId);
+    try {
+      const done = await agent.waitForVerification(queued.id, { timeoutMs: waitMs, intervalMs: 3000 });
+      const outcome = done.outcome ?? done.status;
+      return {
+        verificationId: done.id,
+        outcome,
+        error: done.error,
+        next:
+          outcome === "PASS"
+            ? "Passed. The result is recorded onchain, then paid after the challenge window."
+            : outcome === "INCONCLUSIVE"
+              ? "No definitive result yet (for example CI still running). Call settle_request_verification again later."
+              : "Not passed: read the evidence with settle_check_verification, fix the work and submit again.",
+      };
+    } catch {
+      return { verificationId: queued.id, outcome: "PENDING", next: "Still running; call settle_check_verification later." };
+    }
   };
 
   server.registerTool(
@@ -158,11 +205,11 @@ export async function createSettleMcpServer(agent: SettleAgent, opts: SettleMcpO
     "settle_create_agreement",
     {
       description:
-        "Hire a worker (human or AI agent): fixes milestones, payments and checks, then publishes the agreement onchain. You become the client. Nothing is paid until you fund it.",
+        "Hire a worker (human or AI agent): fixes milestones, payments and checks, then publishes the agreement onchain. You become the client. Nothing is paid until you fund it. Milestone types: api_check (the verifier calls the worker's deployed API, optionally repeatedly), github_ci (pays when a commit merged into the branch passes the named CI checks), human_review (you judge it).",
       inputSchema: {
         worker: z.string().describe("Worker's NEAR testnet account, e.g. alice.testnet"),
         workerKind: z.enum(["AGENT", "HUMAN"]).optional(),
-        milestones: z.array(z.discriminatedUnion("type", [ApiCheckMilestone, HumanReviewMilestone])).min(1).max(10),
+        milestones: z.array(z.discriminatedUnion("type", [ApiCheckMilestone, GithubCiMilestone, HumanReviewMilestone])).min(1).max(10),
         challengePeriodMinutes: z.number().int().min(1).max(43_200).optional().describe("Time you have to challenge a PASS before payout (default 60)"),
         fundWithinHours: z.number().positive().max(720).optional(),
         expiresInDays: z.number().positive().max(365).optional(),
@@ -222,35 +269,33 @@ export async function createSettleMcpServer(agent: SettleAgent, opts: SettleMcpO
     "settle_submit_work",
     {
       description:
-        "Worker: submit a milestone. For an automated API check give the base URL of your deployment; the independent verifier tests it and this waits for the result. For human review give a link to the deliverable.",
+        "Worker: submit a milestone and, for automated ones, wait for the independent verifier. API check: url = base URL of your deployment. GitHub CI: artifactHash = the full commit SHA merged into the agreed branch (url optional, e.g. the pull request). Human review: url = link to the deliverable.",
       inputSchema: {
         agreementId: AgreementId,
         milestoneId: MilestoneId,
-        url: z.string().url().describe("Deployment base URL (API check) or deliverable link (human review)"),
+        url: z.string().url().optional().describe("Deployment base URL (API check), pull request (GitHub CI, optional) or deliverable link (human review)"),
         artifactHash: z.string().min(1).max(200).describe("Git commit SHA or content hash identifying exactly what you deliver"),
       },
     },
     guard(async (a) => {
-      const sub = await agent.actOnChain(a.agreementId, { type: "SUBMIT", milestoneId: a.milestoneId, artifactHash: a.artifactHash, uri: a.url });
-      const automated = sub.job.state.terms.milestones.find((m) => m.id === a.milestoneId)?.type === "AUTOMATED";
-      if (!automated) return ok({ submitTx: sub.txHash, next: "The client reviews it; check back with settle_get_agreement." });
-      const queued = await agent.requestVerification(a.agreementId, a.milestoneId);
-      try {
-        const done = await agent.waitForVerification(queued.id, { timeoutMs: waitMs, intervalMs: 3000 });
-        return ok({
-          submitTx: sub.txHash,
-          verificationId: done.id,
-          outcome: done.outcome ?? done.status,
-          error: done.error,
-          next:
-            done.outcome === "PASS"
-              ? "Passed. The result is recorded onchain, then paid after the challenge window."
-              : "Not passed: read the evidence with settle_check_verification, fix the deployment and submit again.",
-        });
-      } catch {
-        return ok({ submitTx: sub.txHash, verificationId: queued.id, outcome: "PENDING", next: "Still running; call settle_check_verification later." });
-      }
+      const { job } = await agent.getJob(a.agreementId);
+      const terms = job.state.terms.milestones.find((m) => m.id === a.milestoneId);
+      const plan = terms?.type === "AUTOMATED" ? (terms.verificationPlan as { kind: string }) : null;
+      if (plan?.kind === "HTTP_API" && !a.url) return fail("an API check needs url: the base URL of your deployment");
+      const sub = await agent.actOnChain(a.agreementId, { type: "SUBMIT", milestoneId: a.milestoneId, artifactHash: a.artifactHash, ...(a.url ? { uri: a.url } : {}) });
+      if (!plan) return ok({ submitTx: sub.txHash, next: "The client reviews it; check back with settle_get_agreement." });
+      return ok({ submitTx: sub.txHash, ...(await verifyAndWait(a.agreementId, a.milestoneId)) });
     }),
+  );
+
+  server.registerTool(
+    "settle_request_verification",
+    {
+      description:
+        "Worker or client: run the verifier again on the current submission, e.g. when GitHub CI had not finished (INCONCLUSIVE) or the deployment was briefly unreachable. Waits for the result.",
+      inputSchema: { agreementId: AgreementId, milestoneId: MilestoneId },
+    },
+    guard(async (a) => ok(await verifyAndWait(a.agreementId, a.milestoneId))),
   );
 
   server.registerTool(

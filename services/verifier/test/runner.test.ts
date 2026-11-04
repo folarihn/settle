@@ -58,4 +58,25 @@ describe("HTTP plan runner", () => {
     expect(r.error?.message).toContain("blocked address");
     expect(fx.hits()).toBe(before);
   });
+
+  it("sustained health passes only when every probe passes, spaced by the agreed interval", async () => {
+    const waits: number[] = [];
+    const sleep = async (ms: number) => void waits.push(ms);
+    const plan = { ...PLAN, repeat: { count: 4, intervalMs: 15_000 } };
+    const good = await runPlan(plan, `${fx.origin}/good`, { policy: fx.policy, sleep });
+    expect(good.outcome).toBe("PASS");
+    expect(good.probes).toHaveLength(4);
+    expect(waits).toEqual([15_000, 15_000, 15_000]);
+
+    const flaky = await runPlan(plan, `${fx.origin}/flaky`, { policy: fx.policy, sleep });
+    expect(flaky.outcome).toBe("FAIL");
+    expect(flaky.probes?.map((p) => p.outcome)).toEqual(["PASS", "FAIL"]);
+    expect(flaky.checks.find((c) => !c.ok)?.check).toBe("probe 2/4: status");
+  });
+
+  it("sustained health never passes when a probe gets no answer", async () => {
+    const r = await runPlan({ ...PLAN, repeat: { count: 3, intervalMs: 1000 } }, `${fx.origin}/hang`, { policy: fx.policy, sleep: async () => undefined });
+    expect(r.outcome).toBe("INCONCLUSIVE");
+    expect(r.probes).toHaveLength(1);
+  });
 });

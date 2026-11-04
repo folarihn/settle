@@ -234,3 +234,16 @@ h1 {
 header .muted {
   text-decoration: none;
 }
+.template {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+.template input {
+  width: auto;
+  align-self: flex-start;
+}
+.template.selected {
+  border-color: var(--accent);
+}

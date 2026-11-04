@@ -268,6 +268,8 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
   const is = (role: string) => job.roles.includes(role);
   const funded = job.state.status === "FUNDED";
   const human = terms.type === "HUMAN_REVIEW";
+  const plan = (terms.verificationPlan ?? {}) as { kind?: string; repo?: string; branch?: string; requiredChecks?: string[]; repeat?: { count: number; intervalMs: number } };
+  const github = plan.kind === "GITHUB_CHECKS";
   const ms = { milestoneId: m.id };
   const s = m.status;
 
@@ -285,8 +287,14 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
       <dl className="grid">
         <dt>Type</dt>
         <dd>
-          <span className={`pill ${human ? "kind-human" : "kind-auto"}`}>{human ? "Human review" : "Automated verification"}</span>{" "}
-          {human ? `${m.revisionsUsed}/${terms.maxRevisions} revisions used` : "an independent verifier signs PASS or FAIL"}
+          <span className={`pill ${human ? "kind-human" : "kind-auto"}`}>{human ? "Human review" : github ? "GitHub CI" : plan.repeat ? "Sustained API check" : "API check"}</span>{" "}
+          {human
+            ? `${m.revisionsUsed}/${terms.maxRevisions} revisions used`
+            : github
+              ? `a commit on ${plan.repo} ${plan.branch} whose checks ${plan.requiredChecks?.join(", ")} succeeded`
+              : plan.repeat
+                ? `${plan.repeat.count} probes ${plan.repeat.intervalMs / 1000} s apart must all pass; an independent verifier signs PASS or FAIL`
+                : "an independent verifier signs PASS or FAIL"}
         </dd>
         <dt>Status</dt>
         <dd>
@@ -337,9 +345,22 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
         <div className="actions">
           {is("worker") && (s === "PENDING" || s === "REVISION_REQUESTED") && (
             <div className="inline-form">
-              <input placeholder={human ? "content hash of the deliverable" : "git commit SHA"} value={artifact} onChange={(e) => setArtifact(e.target.value)} />
-              <input placeholder={human ? "link to the deliverable (optional)" : `deployment base URL, e.g. ${fixtureBase}/broken`} value={uri} onChange={(e) => setUri(e.target.value)} />
-              <button disabled={busy || !artifact} onClick={() => act("submit", { type: "SUBMIT", ...ms, artifactHash: artifact, ...(uri ? { uri } : {}) }, human || !uri ? undefined : () => api("POST", `/v1/jobs/${job.id}/milestones/${m.id}/verifications`))}>
+              <input
+                placeholder={human ? "content hash of the deliverable" : github ? `full commit SHA merged into ${plan.branch}` : "git commit SHA"}
+                value={artifact}
+                onChange={(e) => setArtifact(e.target.value)}
+              />
+              <input
+                placeholder={human ? "link to the deliverable (optional)" : github ? "pull request link (optional)" : `deployment base URL, e.g. ${fixtureBase}/broken`}
+                value={uri}
+                onChange={(e) => setUri(e.target.value)}
+              />
+              <button
+                disabled={busy || !artifact}
+                onClick={() =>
+                  act("submit", { type: "SUBMIT", ...ms, artifactHash: artifact, ...(uri ? { uri } : {}) }, human || (!github && !uri) ? undefined : () => api("POST", `/v1/jobs/${job.id}/milestones/${m.id}/verifications`))
+                }
+              >
                 {human ? "Submit work" : "Submit and verify"}
               </button>
             </div>

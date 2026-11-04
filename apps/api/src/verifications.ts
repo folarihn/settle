@@ -52,14 +52,16 @@ export class VerificationService {
     if (!terms || !m) throw new ApiError(404, "NOT_FOUND", "milestone not found");
     if (terms.type !== "AUTOMATED") throw new ApiError(409, "INVALID_TRANSITION", "milestone is not automatically verified");
     if (m.status !== "SUBMITTED" || !m.submission) throw new ApiError(409, "INVALID_TRANSITION", `milestone is ${m.status}, not SUBMITTED`);
-    if (!m.submission.uri) throw new ApiError(400, "VALIDATION", "submission has no deployment URL to verify");
+    if (terms.verificationPlan.kind === "HTTP_API" && !m.submission.uri) {
+      throw new ApiError(400, "VALIDATION", "submission has no deployment URL to verify");
+    }
 
     const request: VerificationRequest = {
       escrowContract: state.terms.escrowContract,
       agreementId: jobId,
       milestoneId,
       plan: terms.verificationPlan,
-      submission: { seq: m.submission.seq, artifactHash: m.submission.artifactHash, uri: m.submission.uri },
+      submission: { seq: m.submission.seq, artifactHash: m.submission.artifactHash, ...(m.submission.uri ? { uri: m.submission.uri } : {}) },
     };
     const id = `ver_${randomBytes(12).toString("base64url")}`;
     const at = this.now();

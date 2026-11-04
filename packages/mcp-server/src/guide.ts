@@ -23,7 +23,8 @@ export function summarize(job: JobView, chain: ChainSnapshot | null, me: string)
       return {
         id: m.id,
         title: terms.title,
-        kind: terms.type === "AUTOMATED" ? "automated API check" : "human review",
+        kind: terms.type === "AUTOMATED" ? planKind(terms.verificationPlan) : "human review",
+        ...(terms.type === "AUTOMATED" ? { check: terms.verificationPlan } : {}),
         amountNear: yoctoToNear(terms.amountYocto),
         status: m.status,
         ...(terms.type === "HUMAN_REVIEW" ? { rubric: terms.rubric, revisionsUsed: m.revisionsUsed, maxRevisions: terms.maxRevisions } : {}),
@@ -73,12 +74,12 @@ export function nextSteps(job: JobView, chain: ChainSnapshot | null, me: string)
       case "REVISION_REQUESTED":
         steps.push(
           isWorker
-            ? `${m.id}: submit the work with settle_submit_work ${ref}${terms.type === "AUTOMATED" ? " and the deployment base URL" : " and a link to the deliverable"}.`
+            ? `${m.id}: submit the work with settle_submit_work ${ref}${submitHint(terms)}.`
             : `${m.id}: waiting for the worker to submit.`,
         );
         break;
       case "SUBMITTED":
-        if (terms.type === "AUTOMATED") steps.push(`${m.id}: being verified; check with settle_check_verification.`);
+        if (terms.type === "AUTOMATED") steps.push(`${m.id}: submitted for automatic verification. If the last result was INCONCLUSIVE, call settle_request_verification ${ref}.`);
         else steps.push(isClient ? `${m.id}: review the submission and call settle_review ${ref} with approve, request_revision or open_dispute.` : `${m.id}: waiting for the client's review.`);
         break;
       case "VERIFIED_PENDING_CHALLENGE":
@@ -105,4 +106,16 @@ export function nextSteps(job: JobView, chain: ChainSnapshot | null, me: string)
     }
   }
   return steps;
+}
+
+function planKind(plan: unknown): string {
+  const p = plan as { kind?: string; repeat?: { count: number; intervalMs: number } };
+  if (p.kind === "GITHUB_CHECKS") return "GitHub CI checks";
+  return p.repeat ? `API check, sustained (${p.repeat.count} probes, ${p.repeat.intervalMs / 1000} s apart)` : "API check";
+}
+
+function submitHint(terms: { type: string } & Record<string, unknown>): string {
+  if (terms.type !== "AUTOMATED") return " and a link to the deliverable";
+  const plan = terms.verificationPlan as { kind?: string; repo?: string; branch?: string };
+  return plan.kind === "GITHUB_CHECKS" ? ` and the full commit SHA (merged into ${plan.repo} ${plan.branch}) as artifactHash` : " and the deployment base URL";
 }

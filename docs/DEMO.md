@@ -7,8 +7,8 @@ Everything shown is the live deployment on NEAR testnet; nothing is simulated. U
 | 1 | 0:00 | https://settle-9ewd.onrender.com first screen ([screenshot](screenshots/01-landing-desktop.jpg)) | "Freelancers and AI agents get paid only when work provably meets terms agreed up front. Money sits in a NEAR escrow contract." |
 | 2 | 0:20 | Click the `testnet · settle-escrow-14f651.testnet` link in the header (nearblocks) | "This is the real contract on testnet." |
 | 3 | 0:30 | Client: **Connect a testnet wallet** → Meteor Wallet (testnet) → **Sign in as …** | "Signing in signs a message; no transaction." |
-| 4 | 0:45 | Client: **Create agreement** with the defaults → approve `create_agreement` | "Two milestones: an automated API check and a human-reviewed design, locked by hash before funding." |
-| 5 | 1:05 | Worker profile: **Accept terms**; Client: **Fund escrow (0.5 NEAR)** | "The worker accepts the exact terms; the client deposits exactly the total." |
+| 4 | 0:45 | Client: **New agreement** → *API + design* → worker account → defaults → **Create agreement** → approve `create_agreement` | "Two milestones: an automated API check and a human-reviewed design, locked by hash before funding." |
+| 5 | 1:05 | Worker profile: Dashboard → *Needs your action* → **Accept terms**; Client: **Fund escrow · 0.5 NEAR** | "The worker accepts the exact terms; the client deposits exactly the total." |
 | 6 | 1:25 | Worker: submit `demo-broken` / `…/fixture/broken` → **Run verification** → **FAIL** → **Evidence** | "An independent verifier called the API: `$.status` was `degraded`. FAIL releases nothing; there is no pay-out button." |
 | 7 | 1:55 | Worker: submit `demo-fixed` / `…/fixture/fixed` → **Run verification** → **PASS** → **Record onchain** | "Corrected work passes; the signed report goes onchain. Now a 2-minute challenge window protects the client." |
 | 8 | 2:20 | Show the disabled **Finalize after challenge window** and the end time; (cut) reload after the window → **Finalize** → **Claim payment** / **Release payment** | "Only after the window can it be finalized and paid." |
@@ -21,7 +21,7 @@ Everything shown is the live deployment on NEAR testnet; nothing is simulated. U
 
 - [x] First screen, desktop ([01-landing-desktop.jpg](screenshots/01-landing-desktop.jpg), live deployment)
 - [x] First screen, phone width ([02-landing-mobile.jpg](screenshots/02-landing-mobile.jpg), live deployment)
-- [ ] Signed in, *Your agreements* (needs a wallet sign-in)
+- [ ] Signed in, *Dashboard* (needs a wallet sign-in)
 - [ ] Agreement funded, onchain status `Funded`
 - [ ] FAIL with the evidence panel open
 - [ ] PASS with the challenge-window end time

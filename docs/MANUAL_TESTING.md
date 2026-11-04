@@ -7,13 +7,13 @@ Live deployment: `<app>` = **https://settle-9ewd.onrender.com** (contract `settl
 ## 1. Sign in and create a job (client)
 
 1. Open `<app>` → **Connect a testnet wallet** → Meteor Wallet, on testnet (approve in the pop-up) → **Sign in as `<you>.testnet`**. The wallet popup asks you to sign a message. Expected: your account appears in the header. No transaction is sent.
-2. **Create agreement**. Enter the worker's account. Keep the defaults: API milestone 0.35 NEAR with the demo plan; design milestone 0.15 NEAR, 2 revisions, 0.075 NEAR floor; challenge window 120 s.
-3. **Create agreement (signs create_agreement)**, then approve in the wallet (about 0.2 NEAR attached; the unused storage deposit is refunded). Expected: the job page shows onchain status `Draft`, and the transaction appears under *Your transactions* with a nearblocks link.
+2. **New agreement**. Step 1: **API + design**. Step 2: a specific worker; enter the worker's account. Step 3: keep the defaults (API milestone 0.35 NEAR with the demo plan; design milestone 0.15 NEAR, 2 revisions, 0.075 NEAR protected minimum; challenge window 2 minutes). Step 4 shows a summary.
+3. **Create agreement**, then approve in the wallet (about 0.2 NEAR attached; the unused storage deposit is refunded). Expected: the agreement page shows contract status `Draft` under *Onchain record*, and the transaction appears there under *Your transactions* with a nearblocks link.
 
 ## 2. Accept and fund
 
-1. Worker profile: open the agreement from **Your agreements** → **Accept terms** → approve `accept_terms`.
-2. Client: **Fund escrow (0.5 NEAR)**. This button stays disabled until the worker has accepted. Expected: onchain status `Funded`, and the nearblocks link shows 0.5 NEAR sent to the contract.
+1. Worker profile: open the agreement from the **Dashboard** (*Needs your action*) → **Accept terms** → approve `accept_terms`.
+2. Client: **Fund escrow · 0.5 NEAR**. This button stays disabled until the worker has accepted. Expected: onchain status `Funded`, and the nearblocks link shows 0.5 NEAR sent to the contract.
 3. Refresh the page. The state persists.
 
 ## 3. Automated milestone: real FAIL, then real PASS

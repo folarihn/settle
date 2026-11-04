@@ -32,9 +32,9 @@
 The page refreshes itself, and the verifier service records results, finalizes after the challenge window and pays out automatically. You only do the steps that need a person.
 
 1. Open https://settle-9ewd.onrender.com, click **Connect a testnet wallet** → **Meteor Wallet** (or MyNearWallet for an existing account) and approve, then click **Sign in as …**. Signing in signs a message only; it does not send a transaction.
-2. **Client:** **Create agreement**. Enter the worker's testnet account and keep the defaults: an automated API milestone (0.35 NEAR) and a human-review design milestone (0.15 NEAR, 2 revisions, 0.075 NEAR protected floor). Click **Create agreement (signs create_agreement)** and approve.
-3. **Worker:** open it under **Your agreements** and click **Accept terms**.
-4. **Client:** **Fund escrow (0.5 NEAR)** and approve. The status becomes `Funded`.
+2. **Client:** **New agreement**. Step 1 keep **API + design**; step 2 enter the worker's testnet account; step 3 keep the defaults (an automated API milestone of 0.35 NEAR, and a human-review design milestone of 0.15 NEAR with 2 revisions and a 0.075 NEAR protected minimum); step 4 **Create agreement** and approve.
+3. **Worker:** open it from the **Dashboard** (it is under *Needs your action*) and click **Accept terms**.
+4. **Client:** **Fund escrow · 0.5 NEAR** and approve. The status becomes `Funded`.
 5. **Worker, API milestone:** commit `demo-broken`, URL `https://settle-9ewd.onrender.com/fixture/broken` → **Submit and verify**. You get a real **FAIL**, recorded onchain automatically. **Evidence** shows `$.status == "ok"` failing with `got "degraded"`. Nothing becomes payable.
 6. **Worker:** commit `demo-fixed`, URL `https://settle-9ewd.onrender.com/fixture/fixed` → **Submit and verify** → **PASS**. Then just watch: the challenge window (2 minutes by default) runs out, the milestone is finalized, and **0.35 NEAR is paid to the worker automatically**. The transfer appears onchain within a few seconds of the window ending. If a sleeping verifier delays it, keep the page open; the page wakes it.
 7. **Design milestone:** the worker submits (any content hash); the client clicks **Request revision**; the worker resubmits. Then either the client clicks **Approve and release**, or the worker enters `0.075` → **Propose partial settlement** and the client clicks **Accept 0.075 NEAR settlement**. The payout (both shares) happens automatically. **Claim payment** / **Release payment** are there if you don't want to wait.

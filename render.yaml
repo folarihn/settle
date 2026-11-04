@@ -25,7 +25,7 @@ services:
     name: settle
     runtime: node
     plan: free
-    branch: docs/settle-build-blueprint
+    branch: main
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
     startCommand: node apps/api/dist/main.js
     healthCheckPath: /healthz
@@ -51,7 +51,7 @@ services:
     name: settle-verifier
     runtime: node
     plan: free
-    branch: docs/settle-build-blueprint
+    branch: main
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
     startCommand: node apps/api/dist/worker-main.js
     healthCheckPath: /healthz

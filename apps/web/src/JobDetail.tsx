@@ -3,7 +3,7 @@ import { api, nearToYocto, yoctoToNear, type ChainSnapshot, type ContractCall, t
 import type { Session } from "./App";
 import { fmtDate, isUnclaimedBounty, money, nextAction, planKind, title } from "./derive";
 import { Timeline } from "./Timeline";
-import { AgreementBadge, Badge, MilestoneBadge, MoneyBar, NextStep, Stepper } from "./ui";
+import { AgreementStatus, Icon, MilestoneStatus, MoneyLedger, NextStep, Status, Track } from "./ui";
 import { explorerAccount, explorerTx, sendCall } from "./wallet";
 
 interface TxRecord {
@@ -132,8 +132,8 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
 
   const signOnly = (label: string, call: ContractCall) => run(label, () => sign(label, call));
 
-  if (error && !job) return <p className="error">{error}</p>;
-  if (!job) return <p className="muted">Loading the agreement and reading the escrow contract…</p>;
+  if (error && !job) return <p className="banner bad">{error}</p>;
+  if (!job) return <p className="t3">Loading the agreement and reading the escrow contract…</p>;
 
   const { terms } = job.state;
   const is = (role: string) => job.roles.includes(role);
@@ -141,240 +141,243 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
   const net = session.config.network;
   const me = session.accountId;
   const unclaimed = isUnclaimedBounty(job);
-  const you = (account: string) => (account === me ? <Badge tone="accent">you</Badge> : null);
+  const you = (account: string) => (account === me ? <span className="tag">you</span> : null);
+  const party = (k: string, account: string, extra?: string) => (
+    <div className="fact">
+      <div className="k hstack" style={{ gap: 6 }}>
+        {k} {you(account)}
+      </div>
+      <div className="v mono">
+        {account}
+        {extra && <span className="t3"> · {extra}</span>}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="stack">
-      <a href="#/" className="small">
-        ← Dashboard
+    <>
+      <a href="#/" className="crumb">
+        <Icon name="back" /> Overview
       </a>
+      <div className="split">
+        <div style={{ minWidth: 0 }}>
+          <div className="hstack">
+            <AgreementStatus status={job.state.status} />
+            {terms.openBounty && job.state.status !== "OPEN" && <span className="tag">bounty</span>}
+            <span className="mono t3 xs">{job.id}</span>
+          </div>
+          <h1 className="title-xl">{title(job)}</h1>
+          <div className="hero-amount" style={{ marginTop: 22 }}>
+            {yoctoToNear(terms.totalYocto)}
+            <span className="unit">NEAR</span>
+          </div>
+          <div style={{ marginTop: 22 }}>
+            <MoneyLedger m={money(job)} />
+          </div>
+          <div style={{ marginTop: 28 }}>
+            <NextStep action={nextAction(job, me)} />
+          </div>
 
-      <section className="card">
-        <div className="card-head">
-          <div style={{ minWidth: 0 }}>
-            <div className="row">
-              <AgreementBadge status={job.state.status} />
-              {terms.openBounty && job.state.status !== "OPEN" && <Badge tone="violet">bounty</Badge>}
-              <span className="mono faint">{job.id}</span>
+          {job.state.status === "DRAFT" && job.calls.postBounty && is("client") && !onchain && (
+            <div className="act">
+              {!txs.some((t) => t.label === "post_bounty") ? (
+                <div className="hstack">
+                  <button className="btn" disabled={!!busy} onClick={() => signOnly("post_bounty", job.calls.postBounty!)}>
+                    Post bounty onchain
+                  </button>
+                  <span className="sm t3">Deposits {yoctoToNear(terms.totalYocto)} NEAR plus storage; unused storage is refunded.</span>
+                </div>
+              ) : (
+                <span className="sm t3">Waiting for the network to confirm post_bounty… this page refreshes itself.</span>
+              )}
             </div>
-            <h1 style={{ marginTop: 8, fontSize: "1.5rem" }}>{title(job)}</h1>
-          </div>
-          <span className="spacer" />
-          <div style={{ textAlign: "right" }}>
-            <div className="amount" style={{ fontSize: "1.6rem" }}>
-              {yoctoToNear(terms.totalYocto)} NEAR
+          )}
+          {job.state.status === "OPEN" && (job.calls.claimBounty || job.calls.cancelBounty) && (
+            <div className="act">
+              <div className="hstack">
+                {job.calls.claimBounty && (
+                  <button className="btn" disabled={!!busy} onClick={() => signOnly("claim_bounty", job.calls.claimBounty!)}>
+                    Claim this bounty
+                  </button>
+                )}
+                {job.calls.cancelBounty && (
+                  <button className="btn danger" disabled={!!busy} onClick={() => signOnly("cancel_bounty", job.calls.cancelBounty!)}>
+                    Cancel and refund
+                  </button>
+                )}
+              </div>
+              <span className="sm t3">
+                {job.calls.claimBounty
+                  ? `${yoctoToNear(terms.totalYocto)} NEAR is already in escrow. The first claim the contract executes wins; read the milestones below first.`
+                  : "You get the whole deposit back. Not possible once someone has claimed it."}
+              </span>
             </div>
-            <div className="muted small">{terms.milestones.length === 1 ? "1 milestone" : `${terms.milestones.length} milestones`}</div>
-          </div>
-        </div>
+          )}
+          {job.state.status === "DRAFT" && !job.calls.postBounty && (is("client") || is("worker")) && (
+            <div className="act">
+              <div className="hstack">
+                {is("client") && !onchain && job.calls.createAgreement && !txs.some((t) => t.label === "create_agreement") && (
+                  <button className="btn" disabled={!!busy} onClick={() => signOnly("create_agreement", job.calls.createAgreement!)}>
+                    Create onchain
+                  </button>
+                )}
+                {is("worker") && !job.state.acceptedBy.worker && (
+                  <button className="btn" disabled={!!busy || !onchain} onClick={() => act("accept_terms", { type: "ACCEPT_TERMS", termsHash: job.state.termsHash })}>
+                    Accept terms
+                  </button>
+                )}
+                {is("client") && (
+                  <button className="btn" disabled={!!busy || !job.state.acceptedBy.worker || !onchain} onClick={() => signOnly("fund", job.calls.fund!)}>
+                    Fund escrow · {yoctoToNear(terms.totalYocto)} NEAR
+                  </button>
+                )}
+              </div>
+              <span className="sm t3">
+                {!onchain && txs.some((t) => t.label === "create_agreement")
+                  ? "Waiting for the network to confirm create_agreement… this page refreshes itself."
+                  : !onchain
+                    ? "The client creates the agreement onchain first; then the worker accepts and the client funds."
+                    : !job.state.acceptedBy.worker
+                      ? "Waiting for the worker to accept these exact terms before funding."
+                      : "Funding deposits exactly the total; the terms are locked from then on."}
+              </span>
+            </div>
+          )}
 
-        <NextStep action={nextAction(job, me)} />
-
-        <div style={{ marginTop: 18 }}>
-          <MoneyBar m={money(job)} />
-        </div>
-
-        <div className="parties" style={{ marginTop: 18 }}>
-          <div className="party">
-            <div className="role">Client {you(terms.client.nearAccountId)}</div>
-            <div className="mono">{terms.client.nearAccountId}</div>
-          </div>
-          <div className="party">
-            <div className="role">Worker {you(terms.worker.nearAccountId)}</div>
-            {unclaimed ? (
-              <div className="small">Not claimed yet · claim by {fmtDate(terms.fundingDeadline)}</div>
-            ) : (
-              <div className="mono">
-                {terms.worker.nearAccountId} <span className="faint">({terms.worker.kind.toLowerCase()})</span>
+          <div className="vstack" style={{ gap: 10, marginTop: 20 }}>
+            {busy && (
+              <p className="banner">
+                Working on {busy.replace(/_/g, " ")}…{pendingCall && " Approve the transaction in your wallet window."}
+              </p>
+            )}
+            {error && <p className="banner bad">{error}</p>}
+            {chain?.termsMatch === false && <p className="banner bad">The onchain terms do not match this agreement. Do not fund it.</p>}
+            {chain && chain.divergences.length > 0 && (
+              <div className="banner">
+                The record here and the chain disagree:{" "}
+                {chain.divergences.map((d) => `${d.milestoneId} is ${d.offchain.toLowerCase()} here, ${d.onchain.toLowerCase()} onchain`).join("; ")}. Money always
+                follows the chain; if a wallet request was cancelled, retry it.
+                {pendingCall && (
+                  <div style={{ marginTop: 8 }}>
+                    <button className="btn secondary" disabled={!!busy} onClick={() => signOnly(pendingCall.label, pendingCall.call)}>
+                      Retry {pendingCall.label.replace(/_/g, " ")} onchain
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
-          <div className="party">
-            <div className="role">Verifier</div>
-            <div className="mono">{terms.verifierAuthority}</div>
-          </div>
-          <div className="party">
-            <div className="role">Resolver {you(terms.disputeResolver)}</div>
-            <div className="mono">{terms.disputeResolver}</div>
-          </div>
-        </div>
 
-        {job.state.status === "DRAFT" && job.calls.postBounty && (
-          <div className="action-box">
-            {is("client") && !onchain && !txs.some((t) => t.label === "post_bounty") && (
-              <div className="actions">
-                <button disabled={!!busy} onClick={() => signOnly("post_bounty", job.calls.postBounty!)}>
-                  Post bounty onchain
-                </button>
-                <span className="muted small">Deposits {yoctoToNear(terms.totalYocto)} NEAR plus storage; unused storage is refunded.</span>
-              </div>
-            )}
-            {!onchain && txs.some((t) => t.label === "post_bounty") && (
-              <span className="muted">Waiting for the network to confirm post_bounty… this page refreshes itself.</span>
-            )}
-          </div>
-        )}
-        {job.state.status === "OPEN" && (job.calls.claimBounty || job.calls.cancelBounty) && (
-          <div className="action-box">
-            <div className="actions">
-              {job.calls.claimBounty && (
-                <button disabled={!!busy} onClick={() => signOnly("claim_bounty", job.calls.claimBounty!)}>
-                  Claim this bounty
-                </button>
-              )}
-              {job.calls.cancelBounty && (
-                <button className="danger" disabled={!!busy} onClick={() => signOnly("cancel_bounty", job.calls.cancelBounty!)}>
-                  Cancel bounty and refund
-                </button>
-              )}
+          <section className="section">
+            <div className="section-head">
+              <h2>Milestones</h2>
+              <span className="count">{terms.milestones.length}</span>
             </div>
-            <span className="muted small">
-              {job.calls.claimBounty
-                ? `${yoctoToNear(terms.totalYocto)} NEAR is already in escrow. The first claim the contract executes wins; read the milestones below first.`
-                : "You get the whole deposit back. Not possible once someone has claimed it."}
-            </span>
-          </div>
-        )}
-
-        {job.state.status === "DRAFT" && !job.calls.postBounty && (
-          <div className="action-box">
-            <div className="actions">
-              {is("client") && !onchain && job.calls.createAgreement && !txs.some((t) => t.label === "create_agreement") && (
-                <button disabled={!!busy} onClick={() => signOnly("create_agreement", job.calls.createAgreement!)}>
-                  Create onchain (storage deposit)
-                </button>
-              )}
-              {is("worker") && !job.state.acceptedBy.worker && (
-                <button disabled={!!busy || !onchain} onClick={() => act("accept_terms", { type: "ACCEPT_TERMS", termsHash: job.state.termsHash })}>
-                  Accept terms
-                </button>
-              )}
-              {is("client") && (
-                <button disabled={!!busy || !job.state.acceptedBy.worker || !onchain} onClick={() => signOnly("fund", job.calls.fund!)}>
-                  Fund escrow · {yoctoToNear(terms.totalYocto)} NEAR
-                </button>
-              )}
+            <div>
+              {job.state.milestones.map((m, i) => (
+                <MilestoneCard
+                  key={m.id}
+                  index={i + 1}
+                  m={m}
+                  terms={terms.milestones[i]!}
+                  onchainStatus={onchain?.milestones[i]?.status}
+                  onchainSubmissionSeq={onchain?.milestones[i]?.submission?.seq ?? null}
+                  job={job}
+                  verifications={verifications.filter((v) => v.milestoneId === m.id)}
+                  busy={!!busy}
+                  act={act}
+                  signOnly={signOnly}
+                  run={run}
+                  network={net}
+                />
+              ))}
             </div>
-            <span className="muted small">
-              {!onchain && txs.some((t) => t.label === "create_agreement")
-                ? "Waiting for the network to confirm create_agreement… this page refreshes itself."
-                : !onchain
-                  ? "The client creates the agreement onchain first; then the worker accepts and the client funds."
-                  : !job.state.acceptedBy.worker
-                    ? "Waiting for the worker to accept these exact terms before funding."
-                    : "Funding deposits exactly the total; the terms are locked from then on."}
-            </span>
-          </div>
-        )}
-      </section>
+          </section>
+        </div>
 
-      {busy && (
-        <div className="callout warn">
-          <span className="icon">⏳</span>
-          <div>
-            <strong>Working on {busy.replace(/_/g, " ")}…</strong>
-            {pendingCall && <span>Approve the transaction in your wallet window.</span>}
+        <aside className="aside">
+          <div className="block">
+            <div className="label">Parties</div>
+            <div className="facts">
+              {party("Client", terms.client.nearAccountId, terms.client.kind === "AGENT" ? "AI agent" : "person")}
+              {unclaimed ? (
+                <div className="fact">
+                  <div className="k">Worker</div>
+                  <div className="v">Not claimed yet · claims close {fmtDate(terms.fundingDeadline)}</div>
+                </div>
+              ) : (
+                party("Worker", terms.worker.nearAccountId, terms.worker.kind === "AGENT" ? "AI agent" : "person")
+              )}
+              {party("Verifier", terms.verifierAuthority)}
+              {party("Resolver", terms.disputeResolver)}
+            </div>
           </div>
-        </div>
-      )}
-      {error && (
-        <div className="callout warn">
-          <span className="icon">!</span>
-          <div>{error}</div>
-        </div>
-      )}
-      {chain?.termsMatch === false && (
-        <div className="callout warn">
-          <span className="icon">!</span>
-          <div>
-            <strong>The onchain terms do not match this agreement.</strong> Do not fund it.
-          </div>
-        </div>
-      )}
-      {chain && chain.divergences.length > 0 && (
-        <div className="callout warn">
-          <span className="icon">↻</span>
-          <div>
-            <strong>The website and the chain disagree.</strong>
-            <span>
-              {chain.divergences.map((d) => `${d.milestoneId}: ${d.offchain.toLowerCase()} here, ${d.onchain.toLowerCase()} onchain`).join("; ")}. Money always follows the
-              chain. If a wallet transaction was cancelled, retry it.
-            </span>
-            {pendingCall && (
-              <div className="actions" style={{ marginTop: 8 }}>
-                <button disabled={!!busy} onClick={() => signOnly(pendingCall.label, pendingCall.call)}>
-                  Retry {pendingCall.label.replace(/_/g, " ")} onchain
-                </button>
+
+          <div className="block">
+            <div className="label">Terms</div>
+            <div className="facts">
+              <div className="fact">
+                <div className="k">Challenge window</div>
+                <div className="v">{terms.challengePeriodSec >= 3600 ? `${terms.challengePeriodSec / 3600} h` : `${Math.round(terms.challengePeriodSec / 60)} min`} after a PASS</div>
               </div>
-            )}
+              <div className="fact">
+                <div className="k">{terms.openBounty ? "Claim deadline" : "Funding deadline"}</div>
+                <div className="v">{fmtDate(terms.fundingDeadline)}</div>
+              </div>
+              <div className="fact">
+                <div className="k">Expires</div>
+                <div className="v">{fmtDate(terms.expiresAt)}</div>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
 
-      <h2 className="section-title">Milestones</h2>
-      {job.state.milestones.map((m, i) => (
-        <MilestoneCard
-          key={m.id}
-          m={m}
-          terms={terms.milestones[i]!}
-          onchainStatus={onchain?.milestones[i]?.status}
-          onchainSubmissionSeq={onchain?.milestones[i]?.submission?.seq ?? null}
-          job={job}
-          verifications={verifications.filter((v) => v.milestoneId === m.id)}
-          busy={!!busy}
-          act={act}
-          signOnly={signOnly}
-          run={run}
-          network={net}
-        />
-      ))}
-
-      <Timeline job={job} me={me} refreshKey={job.version} />
-
-      <section className="card">
-        <div className="card-head">
-          <h3>Onchain record</h3>
-          <span className="spacer" />
-          <button className="secondary" disabled={!!busy} onClick={() => run("sync", () => api("POST", `/v1/jobs/${jobId}/sync`).then(() => undefined))}>
-            Refresh from chain
-          </button>
-        </div>
-        <dl className="kv">
-          <dt>Contract status</dt>
-          <dd>{chain?.error ? <span className="error">chain unavailable: {chain.error}</span> : onchain ? onchain.status : "not onchain yet"}</dd>
-          <dt>Escrow contract</dt>
-          <dd>
-            <a className="mono" href={explorerAccount(net, session.config.escrowContract)} target="_blank" rel="noreferrer">
-              {session.config.escrowContract}
-            </a>
-          </dd>
-          <dt>Terms hash</dt>
-          <dd className="mono">{job.onchainTermsHash}</dd>
-          <dt>Challenge window</dt>
-          <dd>{terms.challengePeriodSec >= 3600 ? `${terms.challengePeriodSec / 3600} h` : `${Math.round(terms.challengePeriodSec / 60)} min`} after a PASS</dd>
-          <dt>{terms.openBounty ? "Claim deadline" : "Funding deadline"}</dt>
-          <dd>{fmtDate(terms.fundingDeadline)}</dd>
-          <dt>Expires</dt>
-          <dd>{fmtDate(terms.expiresAt)}</dd>
-          <dt>Your transactions</dt>
-          <dd>
-            {txs.length === 0 && <span className="muted">None from this browser yet.</span>}
-            {txs.map((t) => (
-              <div key={t.hash}>
-                {t.label.replace(/_/g, " ")}:{" "}
-                <a href={explorerTx(net, t.hash)} target="_blank" rel="noreferrer" className="mono">
-                  {t.hash.slice(0, 10)}…
+          <div className="block">
+            <div className="hstack">
+              <div className="label grow">Onchain</div>
+              <button className="btn ghost" style={{ height: 26, padding: "0 8px", fontSize: 12.5 }} disabled={!!busy} onClick={() => run("sync", () => api("POST", `/v1/jobs/${jobId}/sync`).then(() => undefined))}>
+                Refresh
+              </button>
+            </div>
+            <div className="facts">
+              <div className="fact">
+                <div className="k">Contract status</div>
+                <div className="v">{chain?.error ? <span className="error">unavailable: {chain.error}</span> : onchain ? onchain.status : "Not onchain yet"}</div>
+              </div>
+              <div className="fact">
+                <div className="k">Escrow contract</div>
+                <a className="v mono link" href={explorerAccount(net, session.config.escrowContract)} target="_blank" rel="noreferrer">
+                  {session.config.escrowContract}
                 </a>
               </div>
-            ))}
-          </dd>
-        </dl>
-      </section>
-    </div>
+              <div className="fact">
+                <div className="k">Terms hash</div>
+                <div className="v mono t2">{job.onchainTermsHash}</div>
+              </div>
+              {txs.length > 0 && (
+                <div className="fact">
+                  <div className="k">Your transactions</div>
+                  {txs.map((t) => (
+                    <div key={t.hash} className="v sm">
+                      {t.label.replace(/_/g, " ")} ·{" "}
+                      <a href={explorerTx(net, t.hash)} target="_blank" rel="noreferrer" className="mono link">
+                        {t.hash.slice(0, 10)}…
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <Timeline job={job} me={me} refreshKey={job.version} />
+        </aside>
+      </div>
+    </>
   );
 }
 
 interface CardProps {
+  index: number;
   m: Milestone;
   terms: MilestoneTerms;
   onchainStatus: string | undefined;
@@ -389,7 +392,7 @@ interface CardProps {
   network: string;
 }
 
-function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, verifications, busy, act, signOnly, run }: CardProps) {
+function MilestoneCard({ index, m, terms, onchainStatus, onchainSubmissionSeq, job, verifications, busy, act, signOnly, run }: CardProps) {
   const [artifact, setArtifact] = useState("");
   const [uri, setUri] = useState("");
   const [text, setText] = useState("");
@@ -402,246 +405,248 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
   const github = plan.kind === "GITHUB_CHECKS";
   const ms = { milestoneId: m.id };
   const s = m.status;
-
   const fixtureBase = `${window.location.origin}/fixture`;
-
   const kindDetail = human
     ? `${m.revisionsUsed} of ${terms.maxRevisions} revisions used`
     : github
-      ? `a commit merged into ${plan.repo} ${plan.branch} whose checks ${plan.requiredChecks?.join(", ")} succeeded`
+      ? `A commit merged into ${plan.repo} ${plan.branch} whose checks ${plan.requiredChecks?.join(", ")} succeeded`
       : plan.repeat
-        ? `${plan.repeat.count} probes ${plan.repeat.intervalMs / 1000} s apart, every one must pass`
-        : "one request to the delivered API; every agreed check must pass";
+        ? `${plan.repeat.count} probes ${plan.repeat.intervalMs / 1000} s apart; every one must pass`
+        : "One request to the delivered API; every agreed check must pass";
 
   return (
-    <section className="card">
-      <div className="card-head" style={{ marginBottom: 4 }}>
-        <div style={{ minWidth: 0 }}>
-          <h3>{terms.title}</h3>
-          <div className="li-meta" style={{ marginTop: 4 }}>
-            <Badge tone={human ? "violet" : "info"}>{planKind(terms)}</Badge>
-            <MilestoneBadge status={s} />
-            <span className="faint mono">{terms.id}</span>
+    <article className="ms">
+      <div className="ms-head">
+        <span className="ms-index">{String(index).padStart(2, "0")}</span>
+        <div className="grow" style={{ minWidth: 0 }}>
+          <div className="ms-title">{terms.title}</div>
+          <div className="hstack" style={{ marginTop: 6, gap: 12 }}>
+            <MilestoneStatus status={s} />
+            <span className="tag">{planKind(terms)}</span>
           </div>
         </div>
-        <span className="spacer" />
-        <span className="amount">{yoctoToNear(terms.amountYocto)} NEAR</span>
+        <span className="num" style={{ fontSize: 16 }}>
+          {yoctoToNear(terms.amountYocto)} <span className="t3 xs">NEAR</span>
+        </span>
       </div>
-      <Stepper m={m} terms={terms} />
 
-      <dl className="kv" style={{ marginTop: 12 }}>
-        <dt>How it is judged</dt>
-        <dd>{kindDetail}</dd>
-        {human && terms.rubric && (
-          <>
-            <dt>Rubric</dt>
-            <dd>{terms.rubric}</dd>
-          </>
-        )}
-        <dt>Status</dt>
-        <dd>
-          {STATUS_TEXT[s] ?? s} <span className="faint small">· onchain {onchainStatus ?? "—"}</span>
-        </dd>
-        {m.submission && (
-          <>
-            <dt>Submission #{m.submission.seq}</dt>
-            <dd className="mono">
-              {m.submission.artifactHash}
-              {m.submission.uri && (
-                <>
-                  {" · "}
-                  {/^https?:\/\//.test(m.submission.uri) ? (
-                    <a href={m.submission.uri} target="_blank" rel="noreferrer">
-                      {m.submission.uri}
-                    </a>
-                  ) : (
-                    m.submission.uri
-                  )}
-                </>
-              )}
-            </dd>
-          </>
-        )}
-        {m.challengeEndsAt && (
-          <>
-            <dt>Challenge window ends</dt>
-            <dd>{fmtDate(m.challengeEndsAt)}</dd>
-          </>
-        )}
-        {m.settlementProposal && (
-          <>
-            <dt>Settlement proposal</dt>
-            <dd>
-              {yoctoToNear(m.settlementProposal.workerYocto)} NEAR to the worker, proposed by {m.settlementProposal.proposer}
-            </dd>
-          </>
-        )}
-        {m.allocation && (
-          <>
-            <dt>Split</dt>
-            <dd>
-              {yoctoToNear(m.allocation.workerYocto)} NEAR to the worker · {yoctoToNear(m.allocation.clientYocto)} NEAR back to the client
-            </dd>
-          </>
-        )}
-        {human && terms.partialCompensation && (
-          <>
-            <dt>Protected minimum</dt>
-            <dd>{yoctoToNear(terms.partialCompensation.floorYocto)} NEAR once a deliverable is submitted</dd>
-          </>
-        )}
-      </dl>
+      <div className="ms-body">
+        <Track m={m} terms={terms} />
 
-      {funded && (
-        <div className="actions" style={{ marginTop: 14 }}>
-          {is("worker") && (s === "PENDING" || s === "REVISION_REQUESTED") && (
-            <div className="inline-form">
-              <input
-                placeholder={human ? "content hash of the deliverable" : github ? `full commit SHA merged into ${plan.branch}` : "git commit SHA"}
-                value={artifact}
-                onChange={(e) => setArtifact(e.target.value)}
-              />
-              <input
-                placeholder={human ? "link to the deliverable (optional)" : github ? "pull request link (optional)" : `deployment base URL, e.g. ${fixtureBase}/broken`}
-                value={uri}
-                onChange={(e) => setUri(e.target.value)}
-              />
-              <button
-                disabled={busy || !artifact}
-                onClick={() =>
-                  act("submit", { type: "SUBMIT", ...ms, artifactHash: artifact, ...(uri ? { uri } : {}) }, human || (!github && !uri) ? undefined : () => api("POST", `/v1/jobs/${job.id}/milestones/${m.id}/verifications`))
-                }
-              >
-                {human ? "Submit work" : "Submit and verify"}
-              </button>
-            </div>
-          )}
-
-          {!human && s === "SUBMITTED" && (is("client") || is("worker")) && (
-            <button
-              disabled={busy || verifications.some((v) => v.status === "QUEUED" || v.status === "RUNNING")}
-              onClick={() => run("verification", () => api("POST", `/v1/jobs/${job.id}/milestones/${m.id}/verifications`).then(() => undefined))}
-            >
-              Run verification
-            </button>
-          )}
-
-          {human && s === "SUBMITTED" && is("client") && (
+        <dl className="dl">
+          <dt>How it is judged</dt>
+          <dd>{kindDetail}</dd>
+          {human && terms.rubric && (
             <>
-              <button disabled={busy} onClick={() => act("approve", { type: "APPROVE", ...ms })}>
-                Approve and release
-              </button>
-              <input placeholder="feedback / reason" value={text} onChange={(e) => setText(e.target.value)} />
-              <button disabled={busy || !text || m.revisionsUsed >= (terms.maxRevisions ?? 0)} onClick={() => act("request_revision", { type: "REQUEST_REVISION", ...ms, feedback: text })}>
-                Request revision
-              </button>
+              <dt>Rubric</dt>
+              <dd>{terms.rubric}</dd>
             </>
           )}
-
-          {human && (s === "SUBMITTED" || s === "REVISION_REQUESTED") && (is("client") || is("worker")) && (
+          <dt>Status</dt>
+          <dd>
+            {STATUS_TEXT[s] ?? s} <span className="t3 sm">· onchain {onchainStatus ?? "—"}</span>
+          </dd>
+          {m.submission && (
             <>
-              {!(s === "SUBMITTED" && is("client")) && <input placeholder="reason" value={text} onChange={(e) => setText(e.target.value)} />}
-              <button className="secondary" disabled={busy || !text} onClick={() => act("open_dispute", { type: "OPEN_DISPUTE", ...ms, reason: text })}>
-                Open dispute
-              </button>
+              <dt>Submission #{m.submission.seq}</dt>
+              <dd className="mono">
+                {m.submission.artifactHash}
+                {m.submission.uri && (
+                  <>
+                    {" · "}
+                    {/^https?:\/\//.test(m.submission.uri) ? (
+                      <a className="link" href={m.submission.uri} target="_blank" rel="noreferrer">
+                        {m.submission.uri}
+                      </a>
+                    ) : (
+                      m.submission.uri
+                    )}
+                  </>
+                )}
+              </dd>
             </>
           )}
+          {m.challengeEndsAt && (
+            <>
+              <dt>Challenge window ends</dt>
+              <dd>{fmtDate(m.challengeEndsAt)}</dd>
+            </>
+          )}
+          {m.settlementProposal && (
+            <>
+              <dt>Proposed split</dt>
+              <dd>
+                <span className="num">{yoctoToNear(m.settlementProposal.workerYocto)}</span> NEAR to the worker, proposed by{" "}
+                <span className="mono">{m.settlementProposal.proposer}</span>
+              </dd>
+            </>
+          )}
+          {m.allocation && (
+            <>
+              <dt>Split</dt>
+              <dd>
+                <span className="num">{yoctoToNear(m.allocation.workerYocto)}</span> NEAR to the worker · <span className="num">{yoctoToNear(m.allocation.clientYocto)}</span> NEAR back to the client
+              </dd>
+            </>
+          )}
+          {human && terms.partialCompensation && (
+            <>
+              <dt>Protected minimum</dt>
+              <dd>
+                <span className="num">{yoctoToNear(terms.partialCompensation.floorYocto)}</span> NEAR once a deliverable is submitted
+              </dd>
+            </>
+          )}
+        </dl>
 
-          {human && ["SUBMITTED", "REVISION_REQUESTED", "DISPUTED"].includes(s) && (is("client") || is("worker")) && (
-            <div className="inline-form">
-              <input placeholder="worker share in NEAR" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              <button className="secondary" disabled={busy || !amount} onClick={() => act("propose_settlement", { type: "PROPOSE_SETTLEMENT", ...ms, workerYocto: nearToYocto(amount) })}>
-                Propose partial settlement
-              </button>
-              {m.settlementProposal && !job.roles.includes(roleOf(job, m.settlementProposal.proposer)) && (
-                <button disabled={busy} onClick={() => act("accept_settlement", { type: "ACCEPT_SETTLEMENT", ...ms, workerYocto: m.settlementProposal!.workerYocto })}>
-                  Accept {yoctoToNear(m.settlementProposal.workerYocto)} NEAR settlement
+        {funded && (
+          <div className="act">
+            {is("worker") && (s === "PENDING" || s === "REVISION_REQUESTED") && (
+              <div className="inline">
+                <input
+                  aria-label="Artifact"
+                  placeholder={human ? "Content hash of the deliverable" : github ? `Full commit SHA merged into ${plan.branch}` : "Git commit SHA"}
+                  value={artifact}
+                  onChange={(e) => setArtifact(e.target.value)}
+                />
+                <input
+                  aria-label="Link"
+                  placeholder={human ? "Link to the deliverable (optional)" : github ? "Pull request link (optional)" : `Deployment URL, e.g. ${fixtureBase}/broken`}
+                  value={uri}
+                  onChange={(e) => setUri(e.target.value)}
+                />
+                <button
+                  className="btn"
+                  disabled={busy || !artifact}
+                  onClick={() =>
+                    act("submit", { type: "SUBMIT", ...ms, artifactHash: artifact, ...(uri ? { uri } : {}) }, human || (!github && !uri) ? undefined : () => api("POST", `/v1/jobs/${job.id}/milestones/${m.id}/verifications`))
+                  }
+                >
+                  {human ? "Submit work" : "Submit and verify"}
                 </button>
-              )}
-            </div>
-          )}
+              </div>
+            )}
 
-          {!human && s === "VERIFIED_PENDING_CHALLENGE" && (
-            <>
-              {is("client") && (
-                <>
-                  <input placeholder="why the PASS is wrong" value={text} onChange={(e) => setText(e.target.value)} />
-                  <button className="secondary" disabled={busy || !text} onClick={() => act("challenge", { type: "CHALLENGE", ...ms, reason: text })}>
-                    Challenge PASS
+            {!human && s === "SUBMITTED" && (is("client") || is("worker")) && (
+              <div className="hstack">
+                <button
+                  className="btn secondary"
+                  disabled={busy || verifications.some((v) => v.status === "QUEUED" || v.status === "RUNNING")}
+                  onClick={() => run("verification", () => api("POST", `/v1/jobs/${job.id}/milestones/${m.id}/verifications`).then(() => undefined))}
+                >
+                  Run verification
+                </button>
+              </div>
+            )}
+
+            {human && s === "SUBMITTED" && is("client") && (
+              <div className="inline">
+                <button className="btn" disabled={busy} onClick={() => act("approve", { type: "APPROVE", ...ms })}>
+                  Approve and release
+                </button>
+                <input aria-label="Feedback" placeholder="Feedback or reason" value={text} onChange={(e) => setText(e.target.value)} />
+                <button className="btn secondary" disabled={busy || !text || m.revisionsUsed >= (terms.maxRevisions ?? 0)} onClick={() => act("request_revision", { type: "REQUEST_REVISION", ...ms, feedback: text })}>
+                  Request revision
+                </button>
+              </div>
+            )}
+
+            {human && (s === "SUBMITTED" || s === "REVISION_REQUESTED") && (is("client") || is("worker")) && (
+              <div className="inline">
+                {!(s === "SUBMITTED" && is("client")) && <input aria-label="Reason" placeholder="Reason" value={text} onChange={(e) => setText(e.target.value)} />}
+                <button className="btn danger" disabled={busy || !text} onClick={() => act("open_dispute", { type: "OPEN_DISPUTE", ...ms, reason: text })}>
+                  Open dispute
+                </button>
+              </div>
+            )}
+
+            {human && ["SUBMITTED", "REVISION_REQUESTED", "DISPUTED"].includes(s) && (is("client") || is("worker")) && (
+              <div className="inline">
+                <input aria-label="Worker share" placeholder="Worker's share in NEAR" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                <button className="btn secondary" disabled={busy || !amount} onClick={() => act("propose_settlement", { type: "PROPOSE_SETTLEMENT", ...ms, workerYocto: nearToYocto(amount) })}>
+                  Propose a split
+                </button>
+                {m.settlementProposal && !job.roles.includes(roleOf(job, m.settlementProposal.proposer)) && (
+                  <button className="btn" disabled={busy} onClick={() => act("accept_settlement", { type: "ACCEPT_SETTLEMENT", ...ms, workerYocto: m.settlementProposal!.workerYocto })}>
+                    Accept {yoctoToNear(m.settlementProposal.workerYocto)} NEAR split
                   </button>
-                </>
-              )}
-              <button disabled={busy || (m.challengeEndsAt ?? 0) > Date.now()} onClick={() => act("finalize_challenge", { type: "FINALIZE_CHALLENGE", ...ms })}>
-                Finalize after challenge window
-              </button>
-            </>
-          )}
+                )}
+              </div>
+            )}
 
-          {s === "DISPUTED" && is("resolver") && (
-            <div className="inline-form">
-              <input placeholder="award to worker in NEAR" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              <button disabled={busy || !amount} onClick={() => act("resolve_dispute", { type: "RESOLVE_DISPUTE", ...ms, workerYocto: nearToYocto(amount) })}>
-                Resolve dispute
-              </button>
-            </div>
-          )}
+            {!human && s === "VERIFIED_PENDING_CHALLENGE" && (
+              <div className="inline">
+                {is("client") && (
+                  <>
+                    <input aria-label="Challenge reason" placeholder="Why the PASS is wrong" value={text} onChange={(e) => setText(e.target.value)} />
+                    <button className="btn danger" disabled={busy || !text} onClick={() => act("challenge", { type: "CHALLENGE", ...ms, reason: text })}>
+                      Challenge PASS
+                    </button>
+                  </>
+                )}
+                <button className="btn secondary" disabled={busy || (m.challengeEndsAt ?? 0) > Date.now()} onClick={() => act("finalize_challenge", { type: "FINALIZE_CHALLENGE", ...ms })}>
+                  Finalize after the window
+                </button>
+              </div>
+            )}
 
-          {s === "CLAIMABLE" && job.calls.payout[m.id] && (is("client") || is("worker")) && (
-            <button disabled={busy} onClick={() => signOnly("payout", job.calls.payout[m.id]!)}>
-              {is("worker") ? "Claim payment" : "Release payment"} (onchain transfer)
-            </button>
-          )}
+            {s === "DISPUTED" && is("resolver") && (
+              <div className="inline">
+                <input aria-label="Award" placeholder="Award to the worker in NEAR" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                <button className="btn" disabled={busy || !amount} onClick={() => act("resolve_dispute", { type: "RESOLVE_DISPUTE", ...ms, workerYocto: nearToYocto(amount) })}>
+                  Resolve dispute
+                </button>
+              </div>
+            )}
 
-          {(s === "PENDING" || s === "REVISION_REQUESTED") && Date.now() >= job.state.terms.expiresAt && (is("client") || is("worker")) && (
-            <button className="secondary" disabled={busy} onClick={() => act("expire_milestone", { type: "EXPIRE_MILESTONE", ...ms })}>
-              Expire and refund client
-            </button>
-          )}
-        </div>
-      )}
+            {s === "CLAIMABLE" && job.calls.payout[m.id] && (is("client") || is("worker")) && (
+              <div className="hstack">
+                <button className="btn" disabled={busy} onClick={() => signOnly("payout", job.calls.payout[m.id]!)}>
+                  {is("worker") ? "Claim payment" : "Release payment"}
+                </button>
+                <span className="sm t3">The contract sends the fixed split.</span>
+              </div>
+            )}
 
-      {verifications.length > 0 && (
-        <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Run</th>
-              <th>Submission</th>
-              <th>Result</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
+            {(s === "PENDING" || s === "REVISION_REQUESTED") && Date.now() >= job.state.terms.expiresAt && (is("client") || is("worker")) && (
+              <div className="hstack">
+                <button className="btn secondary" disabled={busy} onClick={() => act("expire_milestone", { type: "EXPIRE_MILESTONE", ...ms })}>
+                  Expire and refund the client
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {verifications.length > 0 && (
+          <div className="runs">
             {verifications.map((v) => (
-              <tr key={v.id}>
-                <td className="mono">{v.id.slice(0, 12)}…</td>
-                <td>#{v.submissionSeq}</td>
-                <td>
-                  <Badge tone={v.outcome === "PASS" ? "ok" : v.outcome === "FAIL" ? "bad" : v.outcome ? "warn" : "neutral"}>{v.outcome ?? v.status.toLowerCase()}</Badge>
-                  {v.error && <div className="small muted">{v.error}</div>}
-                </td>
-                <td>
+              <div className="run" key={v.id}>
+                <span className="mono t3 hide-sm">{v.id.slice(0, 14)}</span>
+                <span className="sm t2 hide-sm">Submission #{v.submissionSeq}</span>
+                <span>
+                  <Status tone={v.outcome === "PASS" ? "ok" : v.outcome === "FAIL" ? "bad" : v.outcome ? "warn" : "neutral"}>{v.outcome ?? v.status.toLowerCase()}</Status>
+                  {v.error && <span className="xs t3"> · {v.error}</span>}
+                </span>
+                <span className="hstack" style={{ gap: 4 }}>
                   {v.status === "DONE" && (
-                    <>
-                      <button className="secondary" onClick={() => api<EvidenceResponse>("GET", `/v1/verifications/${v.id}/evidence`).then(setEvidence)}>
-                        Evidence
-                      </button>
-                      {v.contractCall && onchainStatus === "Submitted" && onchainSubmissionSeq === v.submissionSeq && (
-                        <button className="secondary" disabled={busy} onClick={() => signOnly("record_verification", v.contractCall!)}>
-                          Record onchain
-                        </button>
-                      )}
-                    </>
+                    <button className="btn ghost" style={{ height: 28 }} onClick={() => api<EvidenceResponse>("GET", `/v1/verifications/${v.id}/evidence`).then(setEvidence)}>
+                      Evidence
+                    </button>
                   )}
-                </td>
-              </tr>
+                  {v.status === "DONE" && v.contractCall && onchainStatus === "Submitted" && onchainSubmissionSeq === v.submissionSeq && (
+                    <button className="btn secondary" style={{ height: 28 }} disabled={busy} onClick={() => signOnly("record_verification", v.contractCall!)}>
+                      Record onchain
+                    </button>
+                  )}
+                </span>
+              </div>
             ))}
-          </tbody>
-        </table>
-        </div>
-      )}
-      {evidence !== null && <EvidenceView data={evidence} onClose={() => setEvidence(null)} />}
-    </section>
+          </div>
+        )}
+        {evidence !== null && <EvidenceView data={evidence} onClose={() => setEvidence(null)} />}
+      </div>
+    </article>
   );
 }
 
@@ -672,11 +677,11 @@ function wakeVerifier(url: string | null) {
 
 const STATUS_TEXT: Record<string, string> = {
   PENDING: "Waiting for the worker to submit",
-  SUBMITTED: "Submitted — awaiting verification or review",
-  VERIFIED_PENDING_CHALLENGE: "PASS — challenge window open; not payable yet",
-  REVISION_REQUESTED: "Revision requested — funds stay locked",
-  DISPUTED: "In dispute — the resolver decides within the agreed bounds",
-  CLAIMABLE: "Payable — client or worker can trigger the payout",
+  SUBMITTED: "Submitted; awaiting verification or review",
+  VERIFIED_PENDING_CHALLENGE: "Passed; challenge window open, not payable yet",
+  REVISION_REQUESTED: "Revision requested; funds stay locked",
+  DISPUTED: "In dispute; the resolver decides within the agreed bounds",
+  CLAIMABLE: "Payable; the payout can be sent",
   PAYOUT_PENDING: "Payout transfer in progress",
   PAID: "Paid onchain",
 };
@@ -699,17 +704,18 @@ function EvidenceView({ data, onClose }: { data: EvidenceResponse; onClose: () =
   const { report, evidence, matchesReport } = data;
   return (
     <div className="evidence">
-      <div className="row">
-        <strong className={report.outcome === "PASS" ? "ok" : "bad"}>{report.outcome}</strong>
-        <span className="muted small">
-          submission #{report.submissionSeq} · {report.artifactHash} · signed {new Date(report.issuedAt).toLocaleString()}
+      <div className="hstack">
+        <Status tone={report.outcome === "PASS" ? "ok" : "bad"}>
+          <b style={{ color: "var(--text)" }}>{report.outcome}</b>
+        </Status>
+        <span className="xs t3 grow">
+          Submission #{report.submissionSeq} · {report.artifactHash} · signed {fmtDate(report.issuedAt)}
         </span>
-        <span className="spacer" />
-        <button className="secondary" onClick={onClose}>
+        <button className="btn ghost" style={{ height: 26 }} onClick={onClose}>
           Close
         </button>
       </div>
-      <p className="small">
+      <p className="t2">
         Called <span className="mono">{evidence.targetUrl ?? "—"}</span>
         {evidence.status !== null && ` → HTTP ${evidence.status}`}
         {evidence.latencyMs !== null && ` in ${evidence.latencyMs} ms`}
@@ -727,20 +733,24 @@ function EvidenceView({ data, onClose }: { data: EvidenceResponse; onClose: () =
           {evidence.checks.map((c) => (
             <tr key={c.check}>
               <td className="mono">{c.check}</td>
-              <td className={c.ok ? "ok" : "bad"}>{c.ok ? "PASS" : "FAIL"}</td>
-              <td className="mono">{c.detail}</td>
+              <td>
+                <Status tone={c.ok ? "ok" : "bad"}>{c.ok ? "Pass" : "Fail"}</Status>
+              </td>
+              <td className="mono t2">{c.detail}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="small">
+      <p className="xs t2">
         {matchesReport
-          ? "✓ This evidence hashes to the digest inside the verifier's signed report, so it has not been altered."
-          : "✗ This evidence does not match the signed report's digest — do not trust it."}{" "}
-        <span className="muted mono">{report.evidenceDigest}</span>
+          ? "This evidence hashes to the digest inside the verifier's signed report, so it has not been altered."
+          : "This evidence does not match the signed report's digest. Do not trust it."}{" "}
+        <span className="mono t3">{report.evidenceDigest}</span>
       </p>
       <details>
-        <summary className="small">Raw evidence JSON</summary>
+        <summary className="xs t3" style={{ cursor: "pointer" }}>
+          Raw evidence JSON
+        </summary>
         <pre>{JSON.stringify(data, null, 2)}</pre>
       </details>
     </div>

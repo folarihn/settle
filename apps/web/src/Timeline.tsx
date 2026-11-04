@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Job } from "./api";
-import { fmtDate, near, relTime } from "./derive";
+import { near, relTime } from "./derive";
 
 interface EventRow {
   version: number;
@@ -13,6 +13,7 @@ interface EventRow {
 /** The agreement's recorded history, oldest first, in plain words. */
 export function Timeline({ job, me, refreshKey }: { job: Job; me: string; refreshKey: number }) {
   const [events, setEvents] = useState<EventRow[] | null>(null);
+  const [all, setAll] = useState(false);
 
   useEffect(() => {
     api<{ events: EventRow[] }>("GET", `/v1/jobs/${job.id}/events`).then(
@@ -28,14 +29,13 @@ export function Timeline({ job, me, refreshKey }: { job: Job; me: string; refres
   const titleOf = (id: unknown) => t.milestones.find((m) => m.id === id)?.title ?? String(id);
 
   return (
-    <section className="card">
-      <div className="card-head">
-        <h3>History</h3>
-        <span className="spacer" />
-        <span className="muted small">{events.length} recorded events</span>
+    <div className="block">
+      <div className="hstack">
+        <div className="label grow">Activity</div>
+        <span className="xs t3 num">{events.length}</span>
       </div>
-      <ol className="timeline">
-        {events.map((e) => {
+      <ol className="activity" style={{ marginTop: 14 }}>
+        {[...events].reverse().slice(0, all ? undefined : 8).map((e) => {
           const at = Number(e.at);
           const { text, kind } = describe(e, t.client.nearAccountId, titleOf);
           // A payout is mirrored from the chain, which does not say who sent it (client, worker or
@@ -44,16 +44,21 @@ export function Timeline({ job, me, refreshKey }: { job: Job; me: string; refres
           return (
             <li key={e.version} className={kind}>
               <div>
-                <strong>{subject}</strong> {text}
+                <span style={{ fontWeight: 500 }}>{subject}</span> <span className="t2">{text}</span>
               </div>
               <div className="when" title={new Date(at).toLocaleString()}>
-                {relTime(at)} · {fmtDate(at)}
+                {relTime(at)}
               </div>
             </li>
           );
         })}
       </ol>
-    </section>
+      {events.length > 8 && (
+        <button className="btn ghost" style={{ height: 28, padding: "0 8px", fontSize: 12.5 }} onClick={() => setAll(!all)}>
+          {all ? "Show fewer" : `Show all ${events.length}`}
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, yoctoToNear, type Job } from "./api";
 import { fmtDate, planKind, relTime } from "./derive";
-import { Badge, Empty } from "./ui";
+import { Empty, Icon } from "./ui";
 
 /** Open bounties: work already funded in escrow that any signed-in human or agent can claim. */
 export function BountyBoard() {
@@ -20,55 +20,69 @@ export function BountyBoard() {
   }, []);
 
   return (
-    <div className="stack">
+    <>
       <div className="page-head">
         <div>
-          <h1>Open bounties</h1>
-          <p className="muted">The money is already in escrow. The first account to claim a bounty becomes its worker; the contract decides who was first.</p>
+          <h1>Bounties</h1>
+          <p>Work that is already funded in escrow. The first account to claim a bounty becomes its worker; the contract decides who was first.</p>
         </div>
-        <span className="spacer" />
-        <a className="button" href="#/new?bounty">
+        <span className="grow" />
+        <a className="btn" href="#/new?bounty">
+          <Icon name="plus" />
           Post a bounty
         </a>
       </div>
-      {error && <p className="error">{error}</p>}
-      {!bounties && !error && <p className="muted">Loading…</p>}
+      {error && <p className="banner bad">{error}</p>}
+      {!bounties && !error && <p className="t3">Loading…</p>}
       {bounties?.length === 0 && (
-        <section className="card">
-          <Empty title="No open bounties right now">
-            <p>
-              <a href="#/new?bounty">Post one</a>: fund it now, and the first human or agent to claim it gets the work.
-            </p>
-          </Empty>
-        </section>
-      )}
-      <div className="bounties">
-        {bounties?.map((b) => {
-          const t = b.state.terms;
-          return (
-            <a key={b.id} className="card bounty" href={`#/jobs/${b.id}`}>
-              <div className="row">
-                {[...new Set(t.milestones.map(planKind))].map((k) => (
-                  <Badge key={k} tone={k === "Human review" ? "violet" : "info"}>
-                    {k}
-                  </Badge>
-                ))}
-              </div>
-              <h3>{t.milestones.map((m) => m.title).join(" · ")}</h3>
-              <div className="amount">{yoctoToNear(t.totalYocto)} NEAR</div>
-              <div className="li-meta">
-                <span>
-                  by <span className="mono">{t.client.nearAccountId}</span>
-                </span>
-              </div>
-              <div className="li-meta">
-                <span title={fmtDate(t.fundingDeadline)}>claims close {relTime(t.fundingDeadline)}</span>
-                <span>· {t.milestones.length === 1 ? "1 milestone" : `${t.milestones.length} milestones`}</span>
-              </div>
+        <Empty title="No open bounties right now">
+          <p>
+            <a className="link" href="#/new?bounty">
+              Post one
             </a>
-          );
-        })}
-      </div>
-    </div>
+            : fund it now, and the first person or agent to claim it gets the work.
+          </p>
+        </Empty>
+      )}
+      {bounties && bounties.length > 0 && (
+        <div>
+          <div className="bounty-row label" style={{ paddingTop: 0, paddingBottom: 10, borderTop: 0 }}>
+            <span>Work</span>
+            <span className="hide-sm">Claims close</span>
+            <span className="right">Pays</span>
+          </div>
+          {bounties.map((b) => {
+            const t = b.state.terms;
+            return (
+              <a key={b.id} className="bounty-row" href={`#/jobs/${b.id}`}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 500, fontSize: 15 }}>{t.milestones.map((m) => m.title).join(" · ")}</div>
+                  <div className="hstack sm t3" style={{ marginTop: 6 }}>
+                    {[...new Set(t.milestones.map(planKind))].map((k) => (
+                      <span key={k} className="tag">
+                        {k}
+                      </span>
+                    ))}
+                    <span>
+                      posted by <span className="mono">{t.client.nearAccountId}</span>
+                    </span>
+                  </div>
+                </div>
+                <div className="hide-sm sm">
+                  <div>{relTime(t.fundingDeadline)}</div>
+                  <div className="t3 xs">{fmtDate(t.fundingDeadline)}</div>
+                </div>
+                <div className="pay">
+                  {yoctoToNear(t.totalYocto)}
+                  <span className="t3 xs" style={{ marginLeft: 6, fontFamily: "var(--font)" }}>
+                    NEAR
+                  </span>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }

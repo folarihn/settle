@@ -3,7 +3,7 @@ import { BorshWriter } from "./borsh.js";
 import type { AgreementEvent, VerificationReport } from "./events.js";
 import { YOCTO_PER_NEAR } from "./money.js";
 import type { AgreementState, MilestoneStatus } from "./state.js";
-import { computePlanHash, computeTermsHash, type AgreementTerms } from "./terms.js";
+import { BOUNTY_PLACEHOLDER_WORKER, computePlanHash, computeTermsHash, type AgreementTerms } from "./terms.js";
 
 /**
  * Translation between the domain model and the escrow contract's JSON interface
@@ -50,7 +50,7 @@ interface ContractShare {
 export interface ContractAgreement {
   terms: ContractTerms;
   terms_hash: string;
-  status: "Draft" | "Funded" | "Completed";
+  status: "Draft" | "Funded" | "Completed" | "Open" | "Cancelled";
   accepted_by_worker: boolean;
   funded_at_ms: number | null;
   milestones: {
@@ -82,10 +82,15 @@ const PAYOUT_GAS = (60n * TGAS).toString();
 /** Storage prepayment for create_agreement; the contract refunds whatever it does not need. */
 export const CREATE_STORAGE_DEPOSIT = (YOCTO_PER_NEAR / 5n).toString(); // 0.2 NEAR
 
+/** Hash of the offchain document as agreed: for a bounty, the posted terms with the placeholder worker. */
+export function agreedTermsHash(terms: AgreementTerms): string {
+  return computeTermsHash(terms.openBounty ? { ...terms, worker: { ...BOUNTY_PLACEHOLDER_WORKER } } : terms);
+}
+
 export function toContractTerms(terms: AgreementTerms): ContractTerms {
   return {
     agreement_id: terms.agreementId,
-    offchain_terms_hash: computeTermsHash(terms),
+    offchain_terms_hash: agreedTermsHash(terms),
     client: terms.client.nearAccountId,
     worker: terms.worker.nearAccountId,
     verifier: terms.verifierAuthority,
@@ -162,6 +167,22 @@ export function createAgreementCall(terms: AgreementTerms): ContractCall {
   return call(terms.escrowContract, "create_agreement", { terms: toContractTerms(terms) }, CREATE_STORAGE_DEPOSIT);
 }
 
+/** Client posts an open bounty: the total goes into escrow at once, plus refundable storage. */
+export function postBountyCall(terms: AgreementTerms): ContractCall {
+  const deposit = (BigInt(terms.totalYocto) + BigInt(CREATE_STORAGE_DEPOSIT)).toString();
+  return call(terms.escrowContract, "post_bounty", { terms: toContractTerms(terms) }, deposit);
+}
+
+/** Anyone eligible claims an open bounty, accepting exactly the posted terms (placeholder worker). */
+export function claimBountyCall(terms: AgreementTerms): ContractCall {
+  const posted = { ...terms, worker: { ...BOUNTY_PLACEHOLDER_WORKER } };
+  return call(terms.escrowContract, "claim_bounty", { agreement_id: terms.agreementId, terms_hash: computeOnchainTermsHash(toContractTerms(posted)) });
+}
+
+export function cancelBountyCall(terms: AgreementTerms): ContractCall {
+  return call(terms.escrowContract, "cancel_bounty", { agreement_id: terms.agreementId });
+}
+
 export function fundCall(terms: AgreementTerms): ContractCall {
   const onchainHash = computeOnchainTermsHash(toContractTerms(terms));
   return call(terms.escrowContract, "fund", { agreement_id: terms.agreementId, terms_hash: onchainHash }, terms.totalYocto);
@@ -209,6 +230,10 @@ export function contractCallFor(state: AgreementState, e: AgreementEvent): Contr
       return call(t.escrowContract, e.type.toLowerCase(), ms);
     case "START_PAYOUT":
       return payoutCall(t, e.milestoneId);
+    case "CLAIM_BOUNTY":
+      return claimBountyCall(t);
+    case "CANCEL_BOUNTY":
+      return cancelBountyCall(t);
   }
 }
 

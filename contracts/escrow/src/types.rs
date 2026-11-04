@@ -48,6 +48,11 @@ pub enum AgreementStatus {
     Draft,
     Funded,
     Completed,
+    /// An open bounty: funded, waiting for a worker to claim it. Appended after the
+    /// original variants so agreements stored before bounties existed still decode.
+    Open,
+    /// An open bounty the client withdrew before anyone claimed it; the deposit was refunded.
+    Cancelled,
 }
 
 #[near(serializers = [borsh, json])]

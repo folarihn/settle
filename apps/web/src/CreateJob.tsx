@@ -14,6 +14,7 @@ const TEMPLATES: { id: Template; title: string; blurb: string }[] = [
 /** Client creates the agreement offchain, then signs create_agreement (storage prepaid, excess refunded). */
 export function CreateJob({ session }: { session: Session }) {
   const [template, setTemplate] = useState<Template>("api-design");
+  const [openBounty, setOpenBounty] = useState(false);
   const [worker, setWorker] = useState("");
   const [workerKind, setWorkerKind] = useState<"HUMAN" | "AGENT">("AGENT");
   const [apiNear, setApiNear] = useState("0.35");
@@ -75,16 +76,21 @@ export function CreateJob({ session }: { session: Session }) {
         });
       }
       const job = await api<Job>("POST", "/v1/jobs", {
-        worker: { kind: workerKind, nearAccountId: worker.trim() },
+        ...(openBounty ? { openBounty: true } : { worker: { kind: workerKind, nearAccountId: worker.trim() } }),
         totalYocto: (BigInt(apiYocto) + BigInt(designYocto)).toString(),
         milestones,
         challengePeriodSec: challengeSec,
         fundingDeadline: Date.now() + 24 * 3600_000,
         expiresAt: Date.now() + 7 * 24 * 3600_000,
       });
-      setStatus("Saved. Approve create_agreement in your wallet (storage deposit; unused part is refunded)...");
-      const hash = await sendCall(session.wallet, job.calls.createAgreement!);
-      sessionStorage.setItem(`settle.tx.${job.id}`, JSON.stringify([{ label: "create_agreement", hash }]));
+      const call = openBounty ? job.calls.postBounty! : job.calls.createAgreement!;
+      setStatus(
+        openBounty
+          ? "Saved. Approve post_bounty in your wallet: it deposits the total into escrow now (plus storage; the unused part is refunded)..."
+          : "Saved. Approve create_agreement in your wallet (storage deposit; unused part is refunded)...",
+      );
+      const hash = await sendCall(session.wallet, call);
+      sessionStorage.setItem(`settle.tx.${job.id}`, JSON.stringify([{ label: openBounty ? "post_bounty" : "create_agreement", hash }]));
       window.location.hash = `#/jobs/${job.id}`;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -109,17 +115,25 @@ export function CreateJob({ session }: { session: Session }) {
           ))}
         </div>
       </fieldset>
-      <label>
-        Worker NEAR account
-        <input value={worker} onChange={(e) => setWorker(e.target.value)} placeholder="worker.testnet" required />
+      <label className="checkbox">
+        <input type="checkbox" checked={openBounty} onChange={(e) => setOpenBounty(e.target.checked)} />
+        Post as an open bounty: fund it now, and the first human or agent to claim it becomes the worker
       </label>
-      <label>
-        Worker is
-        <select value={workerKind} onChange={(e) => setWorkerKind(e.target.value as "HUMAN" | "AGENT")}>
-          <option value="AGENT">an AI agent</option>
-          <option value="HUMAN">a human</option>
-        </select>
-      </label>
+      {!openBounty && (
+        <>
+          <label>
+            Worker NEAR account
+            <input value={worker} onChange={(e) => setWorker(e.target.value)} placeholder="worker.testnet" required />
+          </label>
+          <label>
+            Worker is
+            <select value={workerKind} onChange={(e) => setWorkerKind(e.target.value as "HUMAN" | "AGENT")}>
+              <option value="AGENT">an AI agent</option>
+              <option value="HUMAN">a human</option>
+            </select>
+          </label>
+        </>
+      )}
 
       {template === "github" ? (
         <fieldset>
@@ -196,7 +210,7 @@ export function CreateJob({ session }: { session: Session }) {
         Challenge window after a PASS (seconds, min 60)
         <input type="number" min={60} value={challengeSec} onChange={(e) => setChallengeSec(Number(e.target.value))} />
       </label>
-      <button disabled={busy}>{busy ? "Working…" : "Create agreement (signs create_agreement)"}</button>
+      <button disabled={busy}>{busy ? "Working…" : openBounty ? "Post bounty (deposits the total now)" : "Create agreement (signs create_agreement)"}</button>
       {status && <p>{status}</p>}
       {error && <p className="error">{error}</p>}
     </form>

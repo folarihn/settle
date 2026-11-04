@@ -121,6 +121,14 @@ export type HumanReviewMilestoneTerms = z.infer<typeof HumanReviewMilestoneTerms
 
 const MAX_CHALLENGE_SEC = 30 * 24 * 60 * 60;
 
+/**
+ * Worker named in an open bounty until someone claims it (the contract's OPEN_BOUNTY_WORKER;
+ * a short top-level name nobody can register). The posted terms, and so their hashes, use
+ * this placeholder; the claimer replaces it.
+ */
+export const OPEN_BOUNTY_WORKER = "open-bounty";
+export const BOUNTY_PLACEHOLDER_WORKER = { kind: "AGENT", nearAccountId: OPEN_BOUNTY_WORKER } as const;
+
 export const AgreementTerms = z
   .object({
     schemaVersion: z.literal(1),
@@ -139,6 +147,8 @@ export const AgreementTerms = z
     challengePeriodSec: z.number().int().min(60).max(MAX_CHALLENGE_SEC),
     fundingDeadline: z.number().int().positive(),
     expiresAt: z.number().int().positive(),
+    /** Posted funded with no worker; the first eligible claimer before `fundingDeadline` becomes the worker. */
+    openBounty: z.literal(true).optional(),
   })
   .strict()
   .superRefine((t, ctx) => {
@@ -148,6 +158,7 @@ export const AgreementTerms = z
     const client = t.client.nearAccountId;
     const worker = t.worker.nearAccountId;
     if (client === worker) issue(["worker"], "client and worker must be different accounts");
+    if (!t.openBounty && worker === OPEN_BOUNTY_WORKER) issue(["worker"], `'${OPEN_BOUNTY_WORKER}' is reserved for open bounties`);
     for (const role of ["verifierAuthority", "disputeResolver"] as const) {
       if (t[role] === client || t[role] === worker) {
         issue([role], `${role} must be independent of client and worker`);

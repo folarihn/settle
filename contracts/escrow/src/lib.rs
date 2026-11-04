@@ -27,6 +27,10 @@ pub const REPORT_SIGNING_TAG: &str = "settle-report-v1";
 /// prepays this so later calls by any party never consume escrowed funds for storage.
 pub const GROWTH_BYTES_PER_MILESTONE: u64 = 600;
 const CALLBACK_GAS: Gas = Gas::from_tgas(5);
+
+/// Worker named in an open bounty's terms until someone claims it. Top-level names under
+/// 32 characters can only be created by the registrar, so no one can hold this account.
+pub const OPEN_BOUNTY_WORKER: &str = "open-bounty";
 const MAX_REASON_LEN: usize = 2000;
 
 #[near(serializers = [borsh])]
@@ -69,35 +73,95 @@ impl Escrow {
             "UNAUTHORIZED",
             "only the client named in the terms can create the agreement",
         );
-        validate_terms(&terms, env::block_timestamp_ms());
-        ensure(!self.agreements.contains_key(&terms.agreement_id), "VALIDATION", "agreement id already exists");
-
-        let terms_hash = terms_hash(&terms);
-        let milestones = terms.milestones.len() as u64;
-        let id = terms.agreement_id.clone();
-        let before = env::storage_usage();
-        self.agreements.insert(
-            id,
-            Agreement {
-                milestones: (0..milestones).map(|_| MilestoneState::default()).collect(),
-                terms,
-                terms_hash: terms_hash.clone(),
-                status: AgreementStatus::Draft,
-                accepted_by_worker: false,
-                funded_at_ms: None,
-            },
-        );
-        self.agreements.flush();
-        let bytes = env::storage_usage() - before + GROWTH_BYTES_PER_MILESTONE * milestones;
-        let required = env::storage_byte_cost().as_yoctonear() * bytes as u128;
-        let attached = env::attached_deposit().as_yoctonear();
-        ensure(attached >= required, "STORAGE", &format!("attach at least {required} yoctoNEAR for storage"));
-        if attached > required {
-            Promise::new(env::predecessor_account_id())
-                .transfer(NearToken::from_yoctonear(attached - required))
-                .detach();
-        }
+        ensure(terms.worker.as_str() != OPEN_BOUNTY_WORKER, "VALIDATION", "use post_bounty for an open bounty");
+        let (terms_hash, storage) = self.insert_new(terms, AgreementStatus::Draft);
+        self.take_deposit(storage);
         terms_hash
+    }
+
+    /// Client posts an open bounty: terms name `open-bounty` as the worker, and the client
+    /// attaches the full total (held in escrow from now on) plus storage. Anyone except the
+    /// client, verifier and resolver may then claim it until `funding_deadline_ms`.
+    #[payable]
+    pub fn post_bounty(&mut self, terms: AgreementTerms) -> String {
+        ensure(
+            env::predecessor_account_id() == terms.client,
+            "UNAUTHORIZED",
+            "only the client named in the terms can post the bounty",
+        );
+        ensure(
+            terms.worker.as_str() == OPEN_BOUNTY_WORKER,
+            "VALIDATION",
+            "an open bounty names 'open-bounty' as its worker",
+        );
+        let total = terms.total.0;
+        let (terms_hash, storage) = self.insert_new(terms, AgreementStatus::Open);
+        self.take_deposit(storage + total);
+        self.total_held += total;
+        terms_hash
+    }
+
+    /// The first caller to claim an open bounty becomes its worker, accepting exactly the
+    /// posted terms. The agreement is funded at once; the terms hash is recomputed with the
+    /// worker filled in.
+    pub fn claim_bounty(&mut self, agreement_id: String, terms_hash: String) -> String {
+        let now = env::block_timestamp_ms();
+        let caller = env::predecessor_account_id();
+        let a = self.agreement_mut(&agreement_id);
+        ensure(a.status == AgreementStatus::Open, "INVALID_TRANSITION", "not an open bounty");
+        ensure(a.terms_hash == terms_hash, "HASH_MISMATCH", "claim references different terms");
+        ensure(now <= a.terms.funding_deadline_ms, "DEADLINE", "the claim deadline has passed");
+        let t = &a.terms;
+        ensure(
+            caller != t.client && caller != t.verifier && caller != t.resolver,
+            "UNAUTHORIZED",
+            "the client, verifier and resolver cannot claim their own bounty",
+        );
+        a.terms.worker = caller;
+        a.terms_hash = terms_hash_of(&a.terms);
+        a.status = AgreementStatus::Funded;
+        a.accepted_by_worker = true;
+        a.funded_at_ms = Some(now);
+        a.terms_hash.clone()
+    }
+
+    /// Client withdraws an unclaimed bounty; the whole deposit goes back. If the refund
+    /// transfer fails, the callback reopens the bounty so the funds stay recoverable.
+    pub fn cancel_bounty(&mut self, agreement_id: String) {
+        let a = self.agreement_mut(&agreement_id);
+        require_role(a, &[Role::Client]);
+        ensure(
+            a.status == AgreementStatus::Open,
+            "INVALID_TRANSITION",
+            "only an unclaimed open bounty can be cancelled",
+        );
+        a.status = AgreementStatus::Cancelled;
+        let (client, total) = (a.terms.client.clone(), a.terms.total.0);
+        self.total_held -= total;
+        Promise::new(client)
+            .transfer(NearToken::from_yoctonear(total))
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_bounty_refund(agreement_id, U128(total)),
+            )
+            .detach();
+    }
+
+    /// Refund callback: on failure the bounty is open again and its funds held again.
+    #[private]
+    pub fn on_bounty_refund(&mut self, agreement_id: String, amount: U128) -> bool {
+        let ok = near_sdk::is_promise_success();
+        if !ok {
+            self.agreement_mut(&agreement_id).status = AgreementStatus::Open;
+            self.total_held += amount.0;
+        }
+        env::log_str(&format!(
+            "bounty refund {agreement_id} {} {}",
+            amount.0,
+            if ok { "succeeded" } else { "failed; reopened" }
+        ));
+        ok
     }
 
     pub fn accept_terms(&mut self, agreement_id: String, terms_hash: String) {
@@ -431,7 +495,7 @@ impl Escrow {
     }
 
     pub fn compute_terms_hash(&self, terms: AgreementTerms) -> String {
-        terms_hash(&terms)
+        terms_hash_of(&terms)
     }
 
     pub fn get_total_held(&self) -> U128 {
@@ -445,6 +509,41 @@ const SETTLEABLE: &[MilestoneStatus] =
     &[MilestoneStatus::Submitted, MilestoneStatus::RevisionRequested, MilestoneStatus::Disputed];
 
 impl Escrow {
+    /// Validates and stores a new agreement; returns its terms hash and the storage cost
+    /// (current size plus prepaid growth) the caller must cover.
+    fn insert_new(&mut self, terms: AgreementTerms, status: AgreementStatus) -> (String, u128) {
+        validate_terms(&terms, env::block_timestamp_ms());
+        ensure(!self.agreements.contains_key(&terms.agreement_id), "VALIDATION", "agreement id already exists");
+        let terms_hash = terms_hash_of(&terms);
+        let milestones = terms.milestones.len() as u64;
+        let before = env::storage_usage();
+        self.agreements.insert(
+            terms.agreement_id.clone(),
+            Agreement {
+                milestones: (0..milestones).map(|_| MilestoneState::default()).collect(),
+                terms,
+                terms_hash: terms_hash.clone(),
+                status,
+                accepted_by_worker: false,
+                funded_at_ms: None,
+            },
+        );
+        self.agreements.flush();
+        let bytes = env::storage_usage() - before + GROWTH_BYTES_PER_MILESTONE * milestones;
+        (terms_hash, env::storage_byte_cost().as_yoctonear() * bytes as u128)
+    }
+
+    /// Requires at least `required` attached and refunds the rest to the caller.
+    fn take_deposit(&self, required: u128) {
+        let attached = env::attached_deposit().as_yoctonear();
+        ensure(attached >= required, "STORAGE", &format!("attach at least {required} yoctoNEAR"));
+        if attached > required {
+            Promise::new(env::predecessor_account_id())
+                .transfer(NearToken::from_yoctonear(attached - required))
+                .detach();
+        }
+    }
+
     fn agreement_mut(&mut self, id: &str) -> &mut Agreement {
         self.agreements.get_mut(id).unwrap_or_else(|| fail("NOT_FOUND", "no such agreement"))
     }
@@ -477,7 +576,7 @@ fn verify_report_signature(report: &VerificationReport, signature_hex: &str, pub
     }
 }
 
-fn terms_hash(terms: &AgreementTerms) -> String {
+fn terms_hash_of(terms: &AgreementTerms) -> String {
     let bytes = near_sdk::borsh::to_vec(terms).unwrap_or_else(|_| fail("VALIDATION", "cannot encode terms"));
     let digest = env::sha256_array(&bytes);
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();

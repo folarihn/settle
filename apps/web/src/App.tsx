@@ -1,3 +1,4 @@
+import { BountyBoard } from "./BountyBoard";
 import { useCallback, useEffect, useState } from "react";
 import { api, getToken, setToken, type PublicConfig } from "./api";
 import { CreateJob } from "./CreateJob";
@@ -103,6 +104,8 @@ export function App() {
         )}
         {session && (
           <>
+            <a href="#/">Agreements</a>
+            <a href="#/bounties">Bounties</a>
             <span className="account">{session.accountId}</span>
             <button className="secondary" onClick={signOut}>
               Sign out
@@ -114,8 +117,9 @@ export function App() {
       <main>
         {!session && <Intro config={config} wallet={wallet} accountId={accountId} signIn={signIn} busy={busy} />}
         {session && route === "#/new" && <CreateJob session={session} />}
+        {session && route === "#/bounties" && <BountyBoard />}
         {session && jobMatch && <JobDetail session={session} jobId={jobMatch[1]!} />}
-        {session && !jobMatch && route !== "#/new" && <JobList />}
+        {session && !jobMatch && route !== "#/new" && route !== "#/bounties" && <JobList />}
       </main>
     </div>
   );

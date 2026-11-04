@@ -52,6 +52,12 @@ export function applyEvent(state: AgreementState, input: unknown): AgreementStat
     case "FUND":
       fund(next, event);
       break;
+    case "CLAIM_BOUNTY":
+      claimBounty(next, event);
+      break;
+    case "CANCEL_BOUNTY":
+      cancelBounty(next, event);
+      break;
     default:
       applyMilestoneEvent(next, event);
   }
@@ -160,21 +166,44 @@ function fund(state: AgreementState, e: Event<"FUND">): void {
   requireAgreementStatus(state, "DRAFT");
   requireRole(state, e.actor, ["client"]);
   if (e.termsHash !== state.termsHash) fail("HASH_MISMATCH", "funding references different terms");
-  if (!state.acceptedBy.client || !state.acceptedBy.worker) {
+  // An open bounty is funded before anyone accepts it: posting it is the deposit.
+  const needsWorker = !state.terms.openBounty;
+  if (!state.acceptedBy.client || (needsWorker && !state.acceptedBy.worker)) {
     fail("INVALID_TRANSITION", "both client and worker must accept the terms before funding");
   }
   if (e.at > state.terms.fundingDeadline) fail("DEADLINE", "funding deadline has passed");
   if (toYocto(e.amountYocto) !== toYocto(state.terms.totalYocto)) {
     fail("ACCOUNTING", `funding must be exactly ${state.terms.totalYocto} yoctoNEAR, got ${e.amountYocto}`);
   }
-  state.status = "FUNDED";
+  state.status = state.terms.openBounty ? "OPEN" : "FUNDED";
   state.fundedYocto = state.terms.totalYocto;
   state.fundedAt = e.at;
 }
 
+/** The claimer becomes the worker of the posted terms; the deposit is already in escrow. */
+function claimBounty(state: AgreementState, e: Event<"CLAIM_BOUNTY">): void {
+  requireAgreementStatus(state, "OPEN");
+  if (e.at > state.terms.fundingDeadline) fail("DEADLINE", "the claim deadline has passed");
+  const t = state.terms;
+  if ([t.client.nearAccountId, t.verifierAuthority, t.disputeResolver].includes(e.actor)) {
+    fail("UNAUTHORIZED", "the client, verifier and resolver cannot claim their own bounty");
+  }
+  // termsHash stays the hash of the posted document both sides agreed to.
+  state.terms = { ...t, worker: { kind: e.workerKind, nearAccountId: e.actor } };
+  state.acceptedBy.worker = true;
+  state.status = "FUNDED";
+}
+
+function cancelBounty(state: AgreementState, e: Event<"CANCEL_BOUNTY">): void {
+  requireAgreementStatus(state, "OPEN");
+  requireRole(state, e.actor, ["client"]);
+  state.status = "CANCELLED";
+  state.fundedYocto = "0";
+}
+
 // ---- milestone transitions -------------------------------------------------------
 
-type MilestoneEvent = Exclude<AgreementEvent, { type: "AMEND_TERMS" | "ACCEPT_TERMS" | "FUND" }>;
+type MilestoneEvent = Exclude<AgreementEvent, { type: "AMEND_TERMS" | "ACCEPT_TERMS" | "FUND" | "CLAIM_BOUNTY" | "CANCEL_BOUNTY" }>;
 
 function applyMilestoneEvent(state: AgreementState, e: MilestoneEvent): void {
   requireAgreementStatus(state, "FUNDED");

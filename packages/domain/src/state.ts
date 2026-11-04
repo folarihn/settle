@@ -45,7 +45,8 @@ export interface MilestoneState {
   allocation: Allocation | null;
 }
 
-export type AgreementStatus = "DRAFT" | "FUNDED" | "COMPLETED";
+/** OPEN: an open bounty, funded and waiting for a claimer. CANCELLED: an unclaimed bounty the client withdrew (refunded). */
+export type AgreementStatus = "DRAFT" | "OPEN" | "FUNDED" | "COMPLETED" | "CANCELLED";
 
 export interface AgreementState {
   terms: AgreementTerms;

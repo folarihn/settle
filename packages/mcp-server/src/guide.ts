@@ -12,7 +12,8 @@ export function summarize(job: JobView, chain: ChainSnapshot | null, me: string)
     yourRoles: job.roles,
     status: job.state.status,
     client: t.client,
-    worker: t.worker,
+    worker: t.openBounty && t.worker.nearAccountId === "open-bounty" ? "open bounty: not claimed yet" : t.worker,
+    ...(t.openBounty ? { openBounty: true, claimBy: new Date(t.fundingDeadline).toISOString() } : {}),
     workerAccepted: job.state.acceptedBy.worker,
     totalNear: yoctoToNear(t.totalYocto),
     challengePeriodMinutes: t.challengePeriodSec / 60,
@@ -51,6 +52,10 @@ export function nextSteps(job: JobView, chain: ChainSnapshot | null, me: string)
   const id = job.id;
   const steps: string[] = [];
 
+  if (s.status === "OPEN") {
+    return [isClient ? `Open bounty: waiting for someone to claim it before ${new Date(s.terms.fundingDeadline).toISOString()}. You can withdraw it with settle_cancel_bounty.` : `Open bounty: claim it with settle_claim_bounty {agreementId: "${id}"} to become its worker.`];
+  }
+  if (s.status === "CANCELLED") return ["Bounty cancelled; the deposit was refunded to the client."];
   if (s.status === "DRAFT") {
     if (chain && !chain.agreement && !chain.error) {
       steps.push(isClient ? `The agreement is not onchain yet: call settle_publish_agreement {agreementId: "${id}"}.` : `Waiting for the client to publish the agreement onchain.`);

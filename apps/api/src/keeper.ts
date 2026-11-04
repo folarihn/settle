@@ -55,6 +55,7 @@ export class Keeper {
 
   /** One pass over funded agreements. Returns how many onchain calls were sent. */
   async tick(onlyJobId?: string): Promise<number> {
+    if (!onlyJobId) await this.watchBounties();
     const { rows } = await this.db.query<{ id: string }>(
       onlyJobId ? "SELECT id FROM jobs WHERE id = $1" : "SELECT id FROM jobs WHERE state->>'status' = 'FUNDED'",
       onlyJobId ? [onlyJobId] : [],
@@ -68,6 +69,16 @@ export class Keeper {
       }
     }
     return sent;
+  }
+
+  /** Mirrors claims and cancellations of posted bounties, so parties and webhooks learn of them without a manual sync. */
+  private async watchBounties(): Promise<void> {
+    const { rows } = await this.db.query<{ id: string }>("SELECT id FROM jobs WHERE state->>'status' = 'OPEN' LIMIT 100");
+    for (const { id } of rows) {
+      await this.jobs.syncFromChain({ accountId: this.config.verifierAccount, kind: "AGENT" }, id).catch((e) => {
+        this.log.warn({ jobId: id, err: e instanceof Error ? e.message : String(e) }, "keeper could not sync bounty");
+      });
+    }
   }
 
   private async advance(jobId: string): Promise<number> {

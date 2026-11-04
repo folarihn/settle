@@ -73,10 +73,18 @@ export interface JobView {
       fundingDeadline: number;
       expiresAt: number;
       milestones: ({ id: string; title: string; type: "AUTOMATED" | "HUMAN_REVIEW"; amountYocto: string } & Record<string, unknown>)[];
+      openBounty?: true;
     };
     milestones: MilestoneView[];
   };
-  calls: { createAgreement?: ContractCall; fund?: ContractCall; payout: Record<string, ContractCall> };
+  calls: {
+    createAgreement?: ContractCall;
+    fund?: ContractCall;
+    postBounty?: ContractCall;
+    claimBounty?: ContractCall;
+    cancelBounty?: ContractCall;
+    payout: Record<string, ContractCall>;
+  };
 }
 
 export interface ChainSnapshot {
@@ -196,6 +204,40 @@ export class SettleAgent {
       last = await this.sync(id);
     }
     return last;
+  }
+
+  /** Open bounties anyone signed in may claim (claim deadline not yet passed). */
+  listBounties() {
+    return this.call<{ bounties: JobView[] }>("GET", "/v1/bounties");
+  }
+
+  /**
+   * Client: post an open bounty. `input` is a createJob body without `worker`; the total goes
+   * into escrow at once (plus refundable storage), and the first eligible claimer becomes the worker.
+   */
+  async postBounty(input: Record<string, unknown>, idempotencyKey?: string): Promise<{ txHash: string; job: JobView }> {
+    const job = await this.createJob({ ...input, openBounty: true }, idempotencyKey);
+    const txHash = await this.execute(job.calls.postBounty!);
+    const synced = await this.syncUntil(job.id, (j) => j.state.status !== "DRAFT");
+    return { txHash, job: synced.job };
+  }
+
+  /** Claim an open bounty: if this account is first, it becomes the worker of a funded agreement. */
+  async claimBounty(id: string): Promise<{ txHash: string; job: JobView }> {
+    const { job } = await this.getJob(id);
+    if (!job.calls.claimBounty) throw new Error(`job ${id} is ${job.state.status}; only an open bounty you are not part of can be claimed`);
+    const txHash = await this.execute(job.calls.claimBounty);
+    const synced = await this.syncUntil(id, (j) => j.state.status !== "OPEN");
+    return { txHash, job: synced.job };
+  }
+
+  /** Client: withdraw an unclaimed bounty; the contract refunds the whole deposit. */
+  async cancelBounty(id: string): Promise<{ txHash: string; job: JobView }> {
+    const { job } = await this.getJob(id);
+    if (!job.calls.cancelBounty) throw new Error(`job ${id} is ${job.state.status}; only your own unclaimed bounty can be cancelled`);
+    const txHash = await this.execute(job.calls.cancelBounty);
+    const synced = await this.syncUntil(id, (j) => j.state.status !== "OPEN");
+    return { txHash, job: synced.job };
   }
 
   /** Client: deposit exactly the agreed total into escrow (the contract checks the amount). */

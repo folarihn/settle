@@ -154,7 +154,13 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
           <dd>{terms.client.nearAccountId}</dd>
           <dt>Worker</dt>
           <dd>
-            {terms.worker.nearAccountId} ({terms.worker.kind.toLowerCase()})
+            {terms.openBounty && terms.worker.nearAccountId === "open-bounty" ? (
+              <>open bounty, not claimed yet (claim by {new Date(terms.fundingDeadline).toLocaleString()})</>
+            ) : (
+              <>
+                {terms.worker.nearAccountId} ({terms.worker.kind.toLowerCase()})
+              </>
+            )}
           </dd>
           <dt>Resolver</dt>
           <dd>{terms.disputeResolver}</dd>
@@ -171,7 +177,35 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
           <dd className="mono">{job.onchainTermsHash}</dd>
         </dl>
 
-        {job.state.status === "DRAFT" && (
+        {job.state.status === "DRAFT" && job.calls.postBounty && (
+          <div className="actions">
+            {is("client") && !onchain && !txs.some((t) => t.label === "post_bounty") && (
+              <button disabled={!!busy} onClick={() => signOnly("post_bounty", job.calls.postBounty!)}>
+                Post bounty onchain (deposits {yoctoToNear(terms.totalYocto)} NEAR + storage)
+              </button>
+            )}
+            {!onchain && txs.some((t) => t.label === "post_bounty") && (
+              <span className="muted">Waiting for the network to confirm post_bounty… this page refreshes itself.</span>
+            )}
+          </div>
+        )}
+        {job.state.status === "OPEN" && (
+          <div className="actions">
+            {job.calls.claimBounty && (
+              <button disabled={!!busy} onClick={() => signOnly("claim_bounty", job.calls.claimBounty!)}>
+                Claim this bounty ({yoctoToNear(terms.totalYocto)} NEAR already in escrow)
+              </button>
+            )}
+            {job.calls.cancelBounty && (
+              <button className="secondary" disabled={!!busy} onClick={() => signOnly("cancel_bounty", job.calls.cancelBounty!)}>
+                Cancel bounty and refund
+              </button>
+            )}
+          </div>
+        )}
+        {job.state.status === "CANCELLED" && <p className="muted">This bounty was cancelled before anyone claimed it; the deposit was refunded to the client.</p>}
+
+        {job.state.status === "DRAFT" && !job.calls.postBounty && (
           <div className="actions">
             {is("client") && !onchain && job.calls.createAgreement && !txs.some((t) => t.label === "create_agreement") && (
               <button disabled={!!busy} onClick={() => signOnly("create_agreement", job.calls.createAgreement!)}>

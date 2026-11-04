@@ -24,7 +24,7 @@ export function escrowSummary(state: AgreementState): EscrowSummary {
     paidWorkerYocto: 0n,
     refundedClientYocto: 0n,
   };
-  if (state.status === "DRAFT") return s;
+  if (state.status === "DRAFT" || state.status === "CANCELLED") return s;
 
   state.terms.milestones.forEach((terms, i) => {
     const m = state.milestones[i]!;
@@ -55,8 +55,8 @@ export function escrowSummary(state: AgreementState): EscrowSummary {
 
 /** Every yoctoNEAR in escrow must be in exactly one bucket. Throws ACCOUNTING otherwise. */
 export function assertReconciled(state: AgreementState): void {
-  if (state.status === "DRAFT") {
-    if (state.fundedYocto !== "0") fail("ACCOUNTING", "draft agreement holds funds");
+  if (state.status === "DRAFT" || state.status === "CANCELLED") {
+    if (state.fundedYocto !== "0") fail("ACCOUNTING", `${state.status.toLowerCase()} agreement holds funds`);
     return;
   }
   const s = escrowSummary(state);

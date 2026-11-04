@@ -37,7 +37,7 @@ export interface Job {
   roles: string[];
   onchainTermsHash: string;
   state: {
-    status: "DRAFT" | "FUNDED" | "COMPLETED";
+    status: "DRAFT" | "OPEN" | "FUNDED" | "COMPLETED" | "CANCELLED";
     termsHash: string;
     acceptedBy: { client: boolean; worker: boolean };
     terms: {
@@ -51,10 +51,18 @@ export interface Job {
       challengePeriodSec: number;
       fundingDeadline: number;
       expiresAt: number;
+      openBounty?: true;
     };
     milestones: Milestone[];
   };
-  calls: { createAgreement?: ContractCall; fund?: ContractCall; payout: Record<string, ContractCall> };
+  calls: {
+    createAgreement?: ContractCall;
+    fund?: ContractCall;
+    postBounty?: ContractCall;
+    claimBounty?: ContractCall;
+    cancelBounty?: ContractCall;
+    payout: Record<string, ContractCall>;
+  };
 }
 
 export interface ChainSnapshot {

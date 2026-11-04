@@ -19,7 +19,7 @@ use near_workspaces::types::{Gas, NearToken};
 use near_workspaces::{Account, Contract, Worker};
 use settle_escrow::{
     Agreement, AgreementStatus, AgreementTerms, MilestoneKind, MilestoneStatus, MilestoneTerms, Outcome,
-    VerificationReport, REPORT_SIGNING_TAG,
+    VerificationReport, OPEN_BOUNTY_WORKER, REPORT_SIGNING_TAG,
 };
 
 type R<T = ()> = Result<T, Box<dyn std::error::Error>>;
@@ -417,5 +417,107 @@ async fn human_review_approval_and_partial_settlement_pay_both_parties() -> R {
     assert_eq!(a.milestones[1].client.paid, U128(client_share));
     assert_eq!(a.status, AgreementStatus::Completed);
     assert_eq!(total_held(&env).await?, 0);
+    Ok(())
+}
+
+/// Post (funded up front) -> claim by a stranger -> work -> paid; and post -> cancel -> real refund.
+#[tokio::test]
+async fn open_bounty_claim_pays_the_claimer_and_cancel_refunds_the_client() -> R {
+    let env = setup().await?;
+    let now = now_ms(&env).await?;
+    let amount = NEAR / 10;
+    let milestone = MilestoneTerms {
+        id: "work".into(),
+        amount: U128(amount),
+        kind: MilestoneKind::HumanReview { max_revisions: 1, floor: U128(0) },
+    };
+    let bounty = |id: &str| AgreementTerms {
+        worker: OPEN_BOUNTY_WORKER.parse().unwrap(),
+        ..terms(&env, id, now, vec![milestone.clone()])
+    };
+    let post = |id: &str| {
+        env.client
+            .call(env.contract.id(), "post_bounty")
+            .args_json(json!({ "terms": bounty(id) }))
+            .deposit(NearToken::from_yoctonear(amount + STORAGE))
+            .gas(CALL_GAS)
+            .transact()
+    };
+
+    // 1. Claimed bounty: the claimer (a fresh account, never named anywhere) is paid.
+    let res = post("bounty_claim_01").await?;
+    assert!(res.is_success(), "{res:?}");
+    let posted_hash: String = res.json()?;
+    assert_eq!(agreement(&env, "bounty_claim_01").await?.status, AgreementStatus::Open);
+    assert_eq!(total_held(&env).await?, amount);
+
+    let claimer = env.worker.dev_create_account().await?;
+    assert_fails(
+        call(
+            &env.client,
+            &env,
+            "claim_bounty",
+            json!({ "agreement_id": "bounty_claim_01", "terms_hash": posted_hash }),
+        )
+        .await?,
+        "UNAUTHORIZED",
+    );
+    let res =
+        call(&claimer, &env, "claim_bounty", json!({ "agreement_id": "bounty_claim_01", "terms_hash": posted_hash }))
+            .await?;
+    assert!(res.is_success(), "{res:?}");
+    let a = agreement(&env, "bounty_claim_01").await?;
+    assert_eq!((a.status, &a.terms.worker), (AgreementStatus::Funded, claimer.id()));
+    assert_fails(
+        call(
+            &env.freelancer,
+            &env,
+            "claim_bounty",
+            json!({ "agreement_id": "bounty_claim_01", "terms_hash": posted_hash }),
+        )
+        .await?,
+        "INVALID_TRANSITION",
+    );
+
+    assert!(call(
+        &claimer,
+        &env,
+        "submit",
+        json!({ "agreement_id": "bounty_claim_01", "milestone_id": "work", "artifact_hash": "deliverable" })
+    )
+    .await?
+    .is_success());
+    assert!(call(&env.client, &env, "approve", json!({ "agreement_id": "bounty_claim_01", "milestone_id": "work" }))
+        .await?
+        .is_success());
+    settle(&env).await?;
+    let before = balance(&claimer).await?;
+    assert!(payout(&env.client, &env, "bounty_claim_01", "work").await?.is_success());
+    settle(&env).await?;
+    assert_eq!(balance(&claimer).await? - before, amount, "claimer receives exactly the milestone");
+    assert_eq!(agreement(&env, "bounty_claim_01").await?.status, AgreementStatus::Completed);
+
+    // 2. Cancelled bounty: the client gets the whole deposit back and nobody can claim it.
+    let res = post("bounty_cancel_1").await?;
+    assert!(res.is_success(), "{res:?}");
+    let hash: String = res.json()?;
+    assert_fails(
+        call(&claimer, &env, "cancel_bounty", json!({ "agreement_id": "bounty_cancel_1" })).await?,
+        "UNAUTHORIZED",
+    );
+    settle(&env).await?;
+    let before = balance(&env.client).await?;
+    let res = call(&env.client, &env, "cancel_bounty", json!({ "agreement_id": "bounty_cancel_1" })).await?;
+    assert!(res.is_success(), "{res:?}");
+    settle(&env).await?;
+    let gained = balance(&env.client).await? - before;
+    let fee = NearToken::from_millinear(5).as_yoctonear();
+    assert!(gained + fee >= amount && gained <= amount, "refund {gained} should be the deposit minus at most gas");
+    assert_eq!(agreement(&env, "bounty_cancel_1").await?.status, AgreementStatus::Cancelled);
+    assert_eq!(total_held(&env).await?, 0);
+    assert_fails(
+        call(&claimer, &env, "claim_bounty", json!({ "agreement_id": "bounty_cancel_1", "terms_hash": hash })).await?,
+        "INVALID_TRANSITION",
+    );
     Ok(())
 }

@@ -15,7 +15,9 @@ export interface SettleMcpOptions {
 const INSTRUCTIONS = `SETTLE lets you hire, or be hired by, humans and other AI agents with payment held in a NEAR testnet escrow contract.
 Money only moves by the contract's rules: automated milestones pay after an independent verifier's signed PASS and a challenge window; human-review milestones pay after the client approves or both sides agree a split.
 Typical client flow: settle_create_agreement -> (worker accepts) -> settle_fund_agreement -> (worker submits) -> settle_review for human-review milestones.
+Or post an open bounty with settle_post_bounty: it is funded at once and the first eligible account to call settle_claim_bounty becomes the worker.
 Typical worker flow: settle_list_agreements -> settle_accept_agreement -> (client funds) -> settle_submit_work -> payment arrives (settle_claim_payment if it does not).
+Looking for work: settle_list_bounties -> settle_get_agreement -> settle_claim_bounty -> settle_submit_work.
 Call settle_get_agreement whenever unsure: it returns nextSteps for your role. Amounts are NEAR decimal strings. Testnet only.`;
 
 const AgreementId = z.string().min(1).max(80).describe("Agreement id, e.g. job_abc123");
@@ -201,6 +203,27 @@ export async function createSettleMcpServer(agent: SettleAgent, opts: SettleMcpO
     guard(async ({ agreementId }) => ok(await view(agreementId))),
   );
 
+  const MilestonesInput = z.array(z.discriminatedUnion("type", [ApiCheckMilestone, GithubCiMilestone, HumanReviewMilestone])).min(1).max(10);
+  const ChallengeInput = z.number().int().min(1).max(43_200).optional().describe("Time you have to challenge a PASS before payout (default 60)");
+
+  /** Builds and checks the createJob body shared by agreements and bounties. */
+  const jobBody = (a: { milestones: MilestoneInput[]; challengePeriodMinutes?: number | undefined; deadlineHours?: number | undefined; expiresInDays?: number | undefined }) => {
+    const milestones = a.milestones.map(toTerms);
+    const total = milestones.reduce((s, m) => s + BigInt(m.amountYocto), 0n).toString();
+    withinCap(total);
+    const now = Date.now();
+    return {
+      total,
+      body: {
+        totalYocto: total,
+        milestones,
+        challengePeriodSec: (a.challengePeriodMinutes ?? 60) * 60,
+        fundingDeadline: now + (a.deadlineHours ?? 24) * 3_600_000,
+        expiresAt: now + (a.expiresInDays ?? 14) * 86_400_000,
+      },
+    };
+  };
+
   server.registerTool(
     "settle_create_agreement",
     {
@@ -209,25 +232,15 @@ export async function createSettleMcpServer(agent: SettleAgent, opts: SettleMcpO
       inputSchema: {
         worker: z.string().describe("Worker's NEAR testnet account, e.g. alice.testnet"),
         workerKind: z.enum(["AGENT", "HUMAN"]).optional(),
-        milestones: z.array(z.discriminatedUnion("type", [ApiCheckMilestone, GithubCiMilestone, HumanReviewMilestone])).min(1).max(10),
-        challengePeriodMinutes: z.number().int().min(1).max(43_200).optional().describe("Time you have to challenge a PASS before payout (default 60)"),
+        milestones: MilestonesInput,
+        challengePeriodMinutes: ChallengeInput,
         fundWithinHours: z.number().positive().max(720).optional(),
         expiresInDays: z.number().positive().max(365).optional(),
       },
     },
     guard(async (a) => {
-      const milestones = a.milestones.map(toTerms);
-      const total = milestones.reduce((s, m) => s + BigInt(m.amountYocto), 0n).toString();
-      withinCap(total);
-      const now = Date.now();
-      const job = await agent.createJob({
-        worker: { kind: a.workerKind ?? "AGENT", nearAccountId: a.worker },
-        totalYocto: total,
-        milestones,
-        challengePeriodSec: (a.challengePeriodMinutes ?? 60) * 60,
-        fundingDeadline: now + (a.fundWithinHours ?? 24) * 3_600_000,
-        expiresAt: now + (a.expiresInDays ?? 14) * 86_400_000,
-      });
+      const { total, body } = jobBody({ ...a, deadlineHours: a.fundWithinHours });
+      const job = await agent.createJob({ worker: { kind: a.workerKind ?? "AGENT", nearAccountId: a.worker }, ...body });
       const txHash = await agent.execute(job.calls.createAgreement!);
       return ok({ created: job.id, createTx: txHash, totalNear: yoctoToNear(total), next: `Share the id ${job.id} with ${a.worker}; once they accept, call settle_fund_agreement.` });
     }),
@@ -235,12 +248,75 @@ export async function createSettleMcpServer(agent: SettleAgent, opts: SettleMcpO
 
   server.registerTool(
     "settle_publish_agreement",
-    { description: "Client: (re)send create_agreement onchain if creating it failed earlier.", inputSchema: { agreementId: AgreementId } },
+    { description: "Client: (re)send create_agreement, or post_bounty for a bounty, if putting it onchain failed earlier.", inputSchema: { agreementId: AgreementId } },
     guard(async ({ agreementId }) => {
       const { job, chain } = await agent.getJob(agreementId);
       if (chain.agreement) return fail("the agreement is already onchain");
-      if (!job.calls.createAgreement) return fail(`agreement is ${job.state.status}; nothing to publish`);
-      return ok({ createTx: await agent.execute(job.calls.createAgreement) });
+      const call = job.calls.postBounty ?? job.calls.createAgreement;
+      if (!call) return fail(`agreement is ${job.state.status}; nothing to publish`);
+      if (job.calls.postBounty) withinCap(job.state.terms.totalYocto);
+      return ok({ tx: await agent.execute(call) });
+    }),
+  );
+
+  server.registerTool(
+    "settle_post_bounty",
+    {
+      description:
+        "Post an open bounty: same milestones as settle_create_agreement but no named worker. The total goes into escrow now (plus a refundable storage deposit of about 0.2 NEAR), and the first human or agent to claim it before the deadline becomes the worker. You can cancel it for a full refund while nobody has claimed it.",
+      inputSchema: {
+        milestones: MilestonesInput,
+        challengePeriodMinutes: ChallengeInput,
+        claimWithinHours: z.number().positive().max(720).optional().describe("Claim deadline (default 24 hours)"),
+        expiresInDays: z.number().positive().max(365).optional(),
+      },
+    },
+    guard(async (a) => {
+      const { body } = jobBody({ ...a, deadlineHours: a.claimWithinHours });
+      const r = await agent.postBounty(body);
+      return ok({ bounty: r.job.id, postTx: r.txHash, status: r.job.state.status, escrowedNear: yoctoToNear(body.totalYocto), next: "Listed on the bounty board (settle_list_bounties). You will see the claimer in settle_get_agreement." });
+    }),
+  );
+
+  server.registerTool(
+    "settle_list_bounties",
+    { description: "Open bounties you can claim: funded work with no worker yet.", inputSchema: {}, annotations: { readOnlyHint: true } },
+    guard(async () => {
+      const { bounties } = await agent.listBounties();
+      return ok(
+        bounties.map((b) => ({
+          agreementId: b.id,
+          client: b.state.terms.client.nearAccountId,
+          totalNear: yoctoToNear(b.state.terms.totalYocto),
+          claimBy: new Date(b.state.terms.fundingDeadline).toISOString(),
+          milestones: b.state.terms.milestones.map((m) => `${m.id}: ${m.title} (${yoctoToNear(m.amountYocto)} NEAR)`),
+          youCanClaim: !!b.calls.claimBounty,
+        })),
+      );
+    }),
+  );
+
+  server.registerTool(
+    "settle_claim_bounty",
+    {
+      description: "Claim an open bounty. If you are first, you become its worker and the money is already in escrow; read the terms with settle_get_agreement first.",
+      inputSchema: { agreementId: AgreementId },
+    },
+    guard(async ({ agreementId }) => {
+      const r = await agent.claimBounty(agreementId);
+      const mine = r.job.state.terms.worker.nearAccountId === me;
+      return mine
+        ? ok({ claimTx: r.txHash, status: r.job.state.status, next: "You are the worker. Submit each milestone with settle_submit_work." })
+        : fail(`not claimed by you: the bounty is ${r.job.state.status}`);
+    }),
+  );
+
+  server.registerTool(
+    "settle_cancel_bounty",
+    { description: "Client: withdraw your unclaimed bounty; the contract refunds the whole deposit.", inputSchema: { agreementId: AgreementId } },
+    guard(async ({ agreementId }) => {
+      const r = await agent.cancelBounty(agreementId);
+      return ok({ cancelTx: r.txHash, status: r.job.state.status });
     }),
   );
 

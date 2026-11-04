@@ -68,5 +68,9 @@ export const AgreementEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("RESOLVE_DISPUTE"), ...onMilestone, workerYocto: YoctoString }).strict(),
   z.object({ type: z.literal("EXPIRE_MILESTONE"), ...onMilestone }).strict(),
   z.object({ type: z.literal("START_PAYOUT"), ...onMilestone }).strict(),
+  // Open bounties. Both happen onchain first and are mirrored by chain sync; the actor of
+  // CLAIM_BOUNTY is whoever the contract recorded as the claimer.
+  z.object({ type: z.literal("CLAIM_BOUNTY"), ...base, workerKind: z.enum(["HUMAN", "AGENT"]) }).strict(),
+  z.object({ type: z.literal("CANCEL_BOUNTY"), ...base }).strict(),
 ]);
 export type AgreementEvent = z.infer<typeof AgreementEvent>;

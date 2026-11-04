@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { KeyPair } from "near-api-js";
 import { SettleAgent, type ContractCall } from "@settle/agent-sdk";
+import { computeOnchainTermsHash } from "@settle/domain";
 import { onchainFunded, startHarness, type Harness } from "../../../apps/api/test/harness.js";
 import { createSettleMcpServer, nearToYocto, yoctoToNear } from "../src/index.js";
 
@@ -44,6 +45,20 @@ async function mcpAgent(accountId: string, sent: ContractCall[], maxNear = "1") 
         }
         if (call.methodName === "accept_terms") h.chain.agreements.get(id)!.accepted_by_worker = true;
         if (call.methodName === "fund") h.chain.agreements.get(id)!.status = "Funded";
+        if (call.methodName === "post_bounty") {
+          const { job } = await agent.getJob(id);
+          h.chain.agreements.set(id, { ...onchainFunded(job.state as never), status: "Open", accepted_by_worker: false, funded_at_ms: null });
+        }
+        if (call.methodName === "claim_bounty") {
+          // Like the contract: first claimer wins, the worker and terms hash change.
+          const a = h.chain.agreements.get(id)!;
+          if (a.status !== "Open") throw new Error("INVALID_TRANSITION: not an open bounty");
+          a.terms = { ...a.terms, worker: accountId };
+          a.terms_hash = computeOnchainTermsHash(a.terms);
+          a.status = "Funded";
+          a.accepted_by_worker = true;
+        }
+        if (call.methodName === "cancel_bounty") h.chain.agreements.get(id)!.status = "Cancelled";
         return `tx-${accountId}-${sent.length}`;
       },
     },
@@ -162,6 +177,38 @@ describe("MCP server: an AI agent hires another AI agent", () => {
       github.closeAllConnections();
       await new Promise((r) => github.close(r));
     }
+  });
+
+  it("posts an open bounty that the first agent to claim wins, and a late claimer is refused", async () => {
+    const poster = await mcpAgent(BUYER, []);
+    const winner = await mcpAgent(SELLER, []);
+    const late = await mcpAgent("late-agent.testnet", []);
+    const posted = await poster.call("settle_post_bounty", {
+      milestones: [{ type: "api_check", id: "api", title: "Health endpoint", amountNear: "0.2", useDemoPlan: true }],
+    });
+    expect(posted.json).toMatchObject({ status: "OPEN", escrowedNear: "0.2" });
+    const id = posted.json.bounty as string;
+
+    const board = (await winner.call("settle_list_bounties")).json;
+    expect(board.find((b: { agreementId: string }) => b.agreementId === id)).toMatchObject({ client: BUYER, totalNear: "0.2", youCanClaim: true });
+    expect((await winner.call("settle_get_agreement", { agreementId: id })).json.nextSteps.join(" ")).toContain("settle_claim_bounty");
+    expect((await poster.call("settle_get_agreement", { agreementId: id })).json.nextSteps.join(" ")).toContain("settle_cancel_bounty");
+
+    const claimed = await winner.call("settle_claim_bounty", { agreementId: id });
+    expect(claimed.json).toMatchObject({ status: "FUNDED" });
+    const lateTry = await late.call("settle_claim_bounty", { agreementId: id });
+    expect(lateTry.isError).toBe(true);
+
+    const view = (await winner.call("settle_get_agreement", { agreementId: id })).json;
+    expect(view).toMatchObject({ yourRoles: ["worker"], status: "FUNDED", worker: { nearAccountId: SELLER } });
+    const work = await winner.call("settle_submit_work", { agreementId: id, milestoneId: "api", url: `${h.fixtureOrigin}/fixed`, artifactHash: "c-fixed" });
+    expect(work.json.outcome).toBe("PASS");
+
+    // The poster can withdraw an unclaimed bounty, and spending limits apply to bounties too.
+    const second = (await poster.call("settle_post_bounty", { milestones: [{ type: "human_review", id: "doc", title: "Docs", amountNear: "0.1", rubric: "Clear." }] })).json.bounty;
+    expect((await poster.call("settle_cancel_bounty", { agreementId: second })).json.status).toBe("CANCELLED");
+    const tooBig = await poster.call("settle_post_bounty", { milestones: [{ type: "human_review", id: "doc", title: "Docs", amountNear: "5", rubric: "Clear." }] });
+    expect(tooBig.text).toContain("exceeds this agent's limit");
   });
 
   it("refuses agreements above the agent's spending limit before anything is created or signed", async () => {

@@ -2,6 +2,11 @@ import { randomBytes } from "node:crypto";
 import {
   AgreementEvent,
   applyEvent,
+  BOUNTY_PLACEHOLDER_WORKER,
+  cancelBountyCall,
+  claimBountyCall,
+  OPEN_BOUNTY_WORKER,
+  postBountyCall,
   computeOnchainTermsHash,
   confirmPayout,
   contractCallFor,
@@ -35,17 +40,24 @@ import { enqueueWebhooks } from "./webhooks.js";
 
 export const CreateJobInput = z
   .object({
-    worker: PartyPrincipal,
+    /** Omit (with openBounty: true) to post an open bounty that anyone eligible may claim. */
+    worker: PartyPrincipal.optional(),
+    openBounty: z.literal(true).optional(),
     totalYocto: YoctoString,
     milestones: z.array(MilestoneTerms).min(1).max(10),
     challengePeriodSec: z.number().int(),
+    /** For an open bounty: the claim deadline. */
     fundingDeadline: z.number().int(),
     expiresAt: z.number().int(),
   })
-  .strict();
+  .strict()
+  .refine((b) => (b.openBounty ? !b.worker : !!b.worker), "name a worker, or set openBounty: true and leave the worker out");
 
-/** Party actions accepted by the API. FUND and START_PAYOUT happen onchain and arrive through sync. */
-const CHAIN_ONLY = new Set(["FUND", "START_PAYOUT"]);
+/**
+ * Party actions accepted by the API. These happen onchain first and arrive through sync:
+ * funding, payouts, and claiming or cancelling a bounty (the contract decides who claimed first).
+ */
+const CHAIN_ONLY = new Set(["FUND", "START_PAYOUT", "CLAIM_BOUNTY", "CANCEL_BOUNTY"]);
 
 export interface JobView {
   id: string;
@@ -54,7 +66,14 @@ export interface JobView {
   roles: string[];
   onchainTermsHash: string;
   /** Calls a party signs directly that have no API action: creating, funding, paying out. */
-  calls: { createAgreement?: ContractCall; fund?: ContractCall; payout: Record<string, ContractCall> };
+  calls: {
+    createAgreement?: ContractCall;
+    fund?: ContractCall;
+    postBounty?: ContractCall;
+    claimBounty?: ContractCall;
+    cancelBounty?: ContractCall;
+    payout: Record<string, ContractCall>;
+  };
 }
 
 export interface ChainSnapshot {
@@ -80,7 +99,8 @@ export class JobService {
         schemaVersion: 1,
         agreementId: `job_${randomBytes(12).toString("base64url")}`,
         client: { kind: p.kind, nearAccountId: p.accountId },
-        worker: body.worker,
+        worker: body.worker ?? { ...BOUNTY_PLACEHOLDER_WORKER },
+        ...(body.openBounty ? { openBounty: true } : {}),
         escrowContract: this.config.escrowContract,
         verifierAuthority: this.config.verifierAccount,
         verifierPublicKey: this.config.verifierPublicKey,
@@ -99,7 +119,7 @@ export class JobService {
     await this.db.tx(async (sql) => {
       await sql.query(
         "INSERT INTO jobs (id, client_account, worker_account, state, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $6)",
-        [accepted.terms.agreementId, p.accountId, body.worker.nearAccountId, JSON.stringify(accepted), accepted.version, at],
+        [accepted.terms.agreementId, p.accountId, accepted.terms.worker.nearAccountId, JSON.stringify(accepted), accepted.version, at],
       );
       await this.logEvent(sql, accepted, p.accountId, "ACCEPT_TERMS", { termsHash: state.termsHash }, at);
     });
@@ -116,8 +136,17 @@ export class JobService {
 
   async get(p: Principal, jobId: string): Promise<JobView> {
     const state = await this.load(this.db, jobId);
-    this.requireParticipant(state, p.accountId);
+    this.requireParticipantOrOpenBounty(state, p.accountId);
     return this.view(state, p.accountId);
+  }
+
+  /** The bounty board: open bounties whose claim deadline has not passed, newest first. */
+  async openBounties(p: Principal): Promise<JobView[]> {
+    const { rows } = await this.db.query<{ state: AgreementState }>(
+      "SELECT state FROM jobs WHERE state->>'status' = 'OPEN' AND (state->'terms'->>'fundingDeadline')::bigint > $1 ORDER BY created_at DESC LIMIT 100",
+      [this.now()],
+    );
+    return rows.map((r) => this.view(r.state, p.accountId));
   }
 
   async events(p: Principal, jobId: string) {
@@ -178,16 +207,18 @@ export class JobService {
    */
   async syncFromChain(p: Principal, jobId: string): Promise<{ job: JobView; chain: ChainSnapshot }> {
     let state = await this.load(this.db, jobId);
-    this.requireParticipant(state, p.accountId);
-    const chain = await this.chainSnapshot(state);
-    const onchain = chain.agreement;
-    if (!onchain || !chain.termsMatch) return { job: this.view(state, p.accountId), chain };
-
+    // Anyone may sync an open bounty: the claimer is not a party until the claim is mirrored.
+    this.requireParticipantOrOpenBounty(state, p.accountId);
     const at = this.now();
-    const t = state.terms;
     const step = async (e: Record<string, unknown>) => {
       state = (await this.apply(jobId, { at, ...e })).state;
     };
+    if (state.terms.openBounty) await this.syncBounty(jobId, state, step).then(async () => (state = await this.load(this.db, jobId)));
+
+    const chain = await this.chainSnapshot(state);
+    const onchain = chain.agreement;
+    if (!onchain || !chain.termsMatch) return { job: this.view(state, p.accountId), chain };
+    const t = state.terms;
 
     if (state.status === "DRAFT" && onchain.status !== "Draft") {
       if (!state.acceptedBy.worker && onchain.accepted_by_worker) {
@@ -215,25 +246,76 @@ export class JobService {
     return { job: this.view(state, p.accountId), chain: await this.chainSnapshot(state) };
   }
 
+  /**
+   * Mirrors a bounty's posting, claim or cancellation. A claim changes the onchain worker
+   * and terms hash, so it is matched by recomputing the hash with the claimer filled in.
+   */
+  private async syncBounty(jobId: string, state: AgreementState, step: (e: Record<string, unknown>) => Promise<void>) {
+    let onchain: ContractAgreement | null;
+    try {
+      onchain = await this.chain.getAgreement(jobId);
+    } catch (e) {
+      if (e instanceof ChainUnavailable) return;
+      throw e;
+    }
+    if (!onchain || onchain.status === "Draft") return;
+    const t = state.terms;
+    const client = t.client.nearAccountId;
+    const claimer = onchain.terms.worker;
+    const claimed = claimer !== OPEN_BOUNTY_WORKER;
+    const posted = { ...t, worker: { ...BOUNTY_PLACEHOLDER_WORKER } };
+    const expected = claimed ? { ...t, worker: { kind: "AGENT" as const, nearAccountId: claimer } } : posted;
+    if (onchain.terms_hash !== computeOnchainTermsHash(toContractTerms(expected))) return; // not these terms: leave it to the divergence view
+
+    if (state.status === "DRAFT") await step({ type: "FUND", actor: client, termsHash: state.termsHash, amountYocto: t.totalYocto });
+    if (claimed && (state.status === "DRAFT" || state.status === "OPEN")) {
+      await step({ type: "CLAIM_BOUNTY", actor: claimer, workerKind: await this.latestKind(claimer) });
+    } else if (onchain.status === "Cancelled" && (state.status === "DRAFT" || state.status === "OPEN")) {
+      await step({ type: "CANCEL_BOUNTY", actor: client });
+    }
+  }
+
+  /** How the claimer last signed in (human or agent). Display only: it never affects money. */
+  private async latestKind(accountId: string): Promise<"HUMAN" | "AGENT"> {
+    const { rows } = await this.db.query<{ kind: "HUMAN" | "AGENT" }>(
+      "SELECT kind FROM sessions WHERE account_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [accountId],
+    );
+    return rows[0]?.kind ?? "AGENT";
+  }
+
   view(state: AgreementState, viewer: string): JobView {
     const roles = [...rolesOf(state.terms, viewer)];
+    const t = state.terms;
     const payout: Record<string, ContractCall> = {};
-    for (const m of state.milestones) if (m.status === "CLAIMABLE") payout[m.id] = payoutCall(state.terms, m.id);
+    for (const m of state.milestones) if (m.status === "CLAIMABLE") payout[m.id] = payoutCall(t, m.id);
+    const bountyCalls =
+      state.status === "OPEN"
+        ? roles.includes("client")
+          ? { cancelBounty: cancelBountyCall(t) }
+          : roles.length === 0
+            ? { claimBounty: claimBountyCall(t) }
+            : {}
+        : {};
+    const draftCalls =
+      state.status !== "DRAFT" ? {} : t.openBounty ? { postBounty: postBountyCall(t) } : { createAgreement: createAgreementCall(t), fund: fundCall(t) };
     return {
-      id: state.terms.agreementId,
+      id: t.agreementId,
       version: state.version,
       state,
       roles,
-      onchainTermsHash: computeOnchainTermsHash(toContractTerms(state.terms)),
-      calls: {
-        ...(state.status === "DRAFT" ? { createAgreement: createAgreementCall(state.terms), fund: fundCall(state.terms) } : {}),
-        payout,
-      },
+      onchainTermsHash: computeOnchainTermsHash(toContractTerms(t)),
+      calls: { ...draftCalls, ...bountyCalls, payout },
     };
   }
 
   requireParticipant(state: AgreementState, accountId: string): void {
     if (rolesOf(state.terms, accountId).size === 0) throw new ApiError(404, "NOT_FOUND", "job not found");
+  }
+
+  /** Open bounties are public to every signed-in account so they can be read and claimed. */
+  requireParticipantOrOpenBounty(state: AgreementState, accountId: string): void {
+    if (state.status !== "OPEN") this.requireParticipant(state, accountId);
   }
 
   async load(sql: Sql, jobId: string): Promise<AgreementState> {
@@ -243,12 +325,14 @@ export class JobService {
   }
 
   private async save(sql: Sql, before: AgreementState, after: AgreementState): Promise<void> {
-    const r = await sql.query("UPDATE jobs SET state = $1, version = $2, updated_at = $3 WHERE id = $4 AND version = $5", [
+    // worker_account changes once, when a bounty is claimed.
+    const r = await sql.query("UPDATE jobs SET state = $1, version = $2, updated_at = $3, worker_account = $6 WHERE id = $4 AND version = $5", [
       JSON.stringify(after),
       after.version,
       this.now(),
       after.terms.agreementId,
       before.version,
+      after.terms.worker.nearAccountId,
     ]);
     if (r.rowCount !== 1) throw new ApiError(409, "CONFLICT", "job changed concurrently; reload and retry");
   }

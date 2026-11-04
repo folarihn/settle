@@ -589,3 +589,128 @@ fn terms_hash_vector_matches_domain() {
         "sha256:c6457601cba9b243067f750272d1ef45c7d542584d30f9fe968dc4dfd44f751f"
     );
 }
+
+// ---- open bounties ------------------------------------------------------------------------
+
+const CLAIMER: &str = "claimer.testnet";
+
+fn bounty_terms() -> AgreementTerms {
+    AgreementTerms { worker: acc(OPEN_BOUNTY_WORKER), ..terms() }
+}
+
+fn posted() -> (Escrow, String) {
+    as_(CLIENT, TOTAL + STORAGE, T0);
+    let mut c = Escrow::default();
+    let hash = c.post_bounty(bounty_terms());
+    (c, hash)
+}
+
+#[test]
+fn posting_a_bounty_escrows_the_total_and_needs_the_placeholder_worker() {
+    let (c, hash) = posted();
+    let a = c.get_agreement(ID.into()).unwrap();
+    assert_eq!(a.status, AgreementStatus::Open);
+    assert_eq!(a.terms_hash, hash);
+    assert_eq!(c.get_total_held(), U128(TOTAL));
+
+    // Not enough for total + storage, a named worker, or someone else posting: all refused.
+    // (Separate ids: the mocked chain keeps storage written before a panic, a real one does not.)
+    let fresh = |id: &str, named_worker: bool| AgreementTerms {
+        agreement_id: id.into(),
+        worker: acc(if named_worker { WORKER } else { OPEN_BOUNTY_WORKER }),
+        ..terms()
+    };
+    let mut c2 = Escrow::default();
+    as_(CLIENT, TOTAL, T0);
+    expect_err("STORAGE", || {
+        c2.post_bounty(fresh("job_short_0001", false));
+    });
+    as_(CLIENT, TOTAL + STORAGE, T0);
+    expect_err("VALIDATION", || {
+        c2.post_bounty(fresh("job_named_0001", true));
+    });
+    as_(WORKER, TOTAL + STORAGE, T0);
+    expect_err("UNAUTHORIZED", || {
+        c2.post_bounty(fresh("job_other_0001", false));
+    });
+    // create_agreement cannot be used to make an unfunded "bounty".
+    as_(CLIENT, STORAGE, T0);
+    expect_err("VALIDATION", || {
+        c2.create_agreement(fresh("job_unfund_001", false));
+    });
+}
+
+#[test]
+fn the_first_claimer_becomes_the_worker_of_a_funded_agreement() {
+    let (mut c, hash) = posted();
+    for blocked in [CLIENT, VERIFIER, RESOLVER] {
+        as_(blocked, 0, T0 + 1);
+        expect_err("UNAUTHORIZED", || {
+            c.claim_bounty(ID.into(), hash.clone());
+        });
+    }
+    as_(CLAIMER, 0, T0 + 1);
+    expect_err("HASH_MISMATCH", || {
+        c.claim_bounty(ID.into(), digest('9'));
+    });
+
+    as_(CLAIMER, 0, T0 + 2);
+    let new_hash = c.claim_bounty(ID.into(), hash.clone());
+    let a = c.get_agreement(ID.into()).unwrap();
+    assert_eq!((a.status, a.accepted_by_worker, a.funded_at_ms), (AgreementStatus::Funded, true, Some(T0 + 2)));
+    assert_eq!(a.terms.worker, acc(CLAIMER));
+    assert_eq!(new_hash, c.compute_terms_hash(AgreementTerms { worker: acc(CLAIMER), ..bounty_terms() }));
+    assert_eq!(c.get_total_held(), U128(TOTAL)); // nothing moved: the deposit was already held
+
+    // A second claimer is too late, and the client can no longer cancel.
+    as_(WORKER, 0, T0 + 3);
+    expect_err("INVALID_TRANSITION", || {
+        c.claim_bounty(ID.into(), hash.clone());
+    });
+    as_(CLIENT, 0, T0 + 3);
+    expect_err("INVALID_TRANSITION", || c.cancel_bounty(ID.into()));
+
+    // The claimer now works it like any agreement and is paid.
+    as_(CLAIMER, 0, T0 + 10);
+    c.submit(ID.into(), "design".into(), "deliverable".into());
+    as_(CLIENT, 0, T0 + 11);
+    c.approve(ID.into(), "design".into());
+    as_(CLAIMER, 0, T0 + 12);
+    c.payout(ID.into(), "design".into());
+    assert_eq!(ms(&c, "design").worker.pending, U128(DESIGN));
+}
+
+#[test]
+fn claims_close_at_the_deadline() {
+    let (mut c, hash) = posted();
+    as_(CLAIMER, 0, T0 + DAY + 1);
+    expect_err("DEADLINE", || {
+        c.claim_bounty(ID.into(), hash);
+    });
+}
+
+#[test]
+fn only_the_client_cancels_an_unclaimed_bounty_and_a_failed_refund_reopens_it() {
+    let (mut c, hash) = posted();
+    as_(CLAIMER, 0, T0 + 1);
+    expect_err("UNAUTHORIZED", || c.cancel_bounty(ID.into()));
+    as_(CLIENT, 0, T0 + 1);
+    c.cancel_bounty(ID.into());
+    assert_eq!(c.get_agreement(ID.into()).unwrap().status, AgreementStatus::Cancelled);
+    assert_eq!(c.get_total_held(), U128(0));
+    as_(CLAIMER, 0, T0 + 2);
+    expect_err("INVALID_TRANSITION", || {
+        c.claim_bounty(ID.into(), hash.clone());
+    });
+
+    testing_env!(
+        builder(CONTRACT, 0, T0 + 3).build(),
+        near_sdk::test_vm_config(),
+        near_sdk::RuntimeFeesConfig::test(),
+        Default::default(),
+        vec![PromiseResult::Failed],
+    );
+    assert!(!c.on_bounty_refund(ID.into(), U128(TOTAL)));
+    assert_eq!(c.get_agreement(ID.into()).unwrap().status, AgreementStatus::Open);
+    assert_eq!(c.get_total_held(), U128(TOTAL));
+}

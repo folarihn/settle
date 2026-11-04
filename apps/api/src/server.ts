@@ -135,6 +135,7 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
     return idempotent(p, req, reply, 201, () => jobs.create(p, req.body));
   });
   app.get("/v1/jobs", async (req) => ({ jobs: await jobs.list(await auth(req)) }));
+  app.get("/v1/bounties", async (req) => ({ bounties: await jobs.openBounties(await auth(req)) }));
   app.get("/v1/jobs/:id", async (req) => {
     const p = await auth(req);
     const job = await jobs.get(p, IdParams.parse(req.params).id);

@@ -299,3 +299,27 @@ The same two agents and MCP servers as run 8, on the deployment of `0483c46`. Ag
 | 11:25:30 – 11:26:07 | keeper finalizes and pays both after the 60 s window | onchain **`Completed`** |
 
 Confirmed with `get_agreement` at `final` finality: both milestones `Paid`, outcome `Pass`, 0.01 NEAR paid to the worker for each, nothing refunded. `ci` shows `submission_count` 2 (the FAIL, then the PASS). The verifier called GitHub without a token.
+
+## Run 10: open bounties, posted and claimed by agents through MCP (PASS)
+
+The contract was upgraded in place by tag `testnet-redeploy-3` (commit `dca78be`, code hash `BkDt9XhT5sxXse5eJ4U2jG7se8Y3drpNBohBJyLY6fgY` matching the build; [workflow run](https://github.com/folarihn/settle/actions/runs/41824041417)). After the upgrade, agreements created earlier (`job_Oh1DJwwmZO5X7pVC`, `job_r_hjk81zXxRTZBYl`, `job_RfuSuCfZ7nZFxpa1`) still read `Completed`, and `get_total_held` was unchanged.
+
+Same two agents and MCP servers as run 8.
+
+| Time (UTC) | Step | Result |
+| --- | --- | --- |
+| 11:52:53 | buyer `settle_post_bounty`: 0.02 NEAR API check, no worker, claim within 1 h | [`8bS2ojFH…`](https://testnet.nearblocks.io/txns/8bS2ojFHLzHdeuP2NZcGFmks1hBZzr4c6zc4CxFcXssQ), `OPEN`, 0.02 NEAR escrowed |
+| 11:52:54 | seller `settle_list_bounties` | the bounty is listed, `youCanClaim: true` |
+| 11:53:00 | seller `settle_claim_bounty` | [`9i7K8P5h…`](https://testnet.nearblocks.io/txns/9i7K8P5hG4mbG2VFVfPeVgB3J1PKP3VdKK8tRgkPZZxf), `FUNDED`, seller is now the worker |
+| 11:53:05 | seller `settle_submit_work` with `/fixture/fixed` | [`63am4CdH…`](https://testnet.nearblocks.io/txns/63am4CdHt7piNcWVBzgzjxxDVJJUUFMFZdh7bhpethGx) → **PASS** |
+| 11:54:17 – 11:54:30 | keeper finalizes and pays | `Completed`, 0.02 NEAR to the seller |
+| 11:54:38 | buyer posts a second bounty (0.01 NEAR) | [`2tdn4Nfy…`](https://testnet.nearblocks.io/txns/2tdn4NfyMaD3iABDAVfPbSeTmqg3ahhEddgsQe7AtTbL) |
+| 11:54:43 | buyer `settle_cancel_bounty` | [`4kpGaxDT…`](https://testnet.nearblocks.io/txns/4kpGaxDTXcZchqykbjNQLX5Daccf71BkcGsNufa6aDTL): contract log `bounty refund job_HIteZ4IhvsI9Gj2e 10000000000000000000000 succeeded`, status `CANCELLED` |
+| 11:54:44 | seller tries to claim the cancelled bounty | refused (it is no longer public) |
+
+Confirmed with `get_agreement` at `final` finality:
+- `job_mpGHhH4lIPB0itzL` is `Completed`; `terms.worker` is `settle-agent-14f651.testnet` (posted as `open-bounty`); the milestone is `Paid`, with 0.02 NEAR to the worker.
+- `job_HIteZ4IhvsI9Gj2e` is `Cancelled`, with worker `open-bounty`.
+- `get_total_held` is back to its pre-run value.
+
+The race between two claimers was not exercised live, because no third funded agent account was available. It is covered by the contract unit tests and the real-node sandbox test: a second claim fails with `INVALID_TRANSITION`.

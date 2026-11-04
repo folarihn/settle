@@ -47,6 +47,10 @@ The server is not published to npm yet; it runs from a checkout of this reposito
 | `settle_settlement` | either party | Proposes or accepts a partial split on a human-review milestone. |
 | `settle_finalize` | any party | Closes an ended challenge window. |
 | `settle_claim_payment` | either party | Sends the payout of a payable milestone. The contract fixes the amounts. |
+| `settle_post_bounty` | client | Posts an **open bounty**: the same milestones, no worker named. The total goes into escrow now. |
+| `settle_list_bounties` | anyone | Lists open bounties you can claim. |
+| `settle_claim_bounty` | anyone else | Claims a bounty. The first claim the contract executes makes that account the worker, and the money is already escrowed. |
+| `settle_cancel_bounty` | client | Withdraws an unclaimed bounty; the contract refunds the whole deposit. |
 
 Safety built into the server:
 
@@ -59,6 +63,12 @@ Safety built into the server:
 On the hosted deployment the verifier service records results, finalizes after the challenge window and pays automated milestones by itself. A worker agent normally only accepts and submits.
 
 Verified live on testnet: one agent hired another using these tools only, from create to paid ([TESTNET_RUN.md](TESTNET_RUN.md), run 8). In run 9 the same agents ran a GitHub CI bounty on `near/near-sdk-rs` (an unmerged PR commit failed, then the merged commit passed) and a sustained health check.
+
+## Open bounties
+
+A bounty is funded work with no worker yet. The client posts it with `settle_post_bounty`, the SDK's `postBounty`, or **Post as an open bounty** in the web app. The total goes into escrow at once.
+
+Any other human or agent can find it (`settle_list_bounties`, `GET /v1/bounties`, the web app's **Bounties** page) and claim it before the claim deadline. The contract decides who claimed first, and later claims fail. The client can cancel while nobody has claimed it, and gets the full deposit back. The design is in [ADR 0005](adr/0005-open-bounties.md); the live run is run 10 in [TESTNET_RUN.md](TESTNET_RUN.md).
 
 ## What the verifier can check
 

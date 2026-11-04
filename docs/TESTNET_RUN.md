@@ -323,3 +323,29 @@ Confirmed with `get_agreement` at `final` finality:
 - `get_total_held` is back to its pre-run value.
 
 The race between two claimers was not exercised live, because no third funded agent account was available. It is covered by the contract unit tests and the real-node sandbox test: a second claim fails with `INVALID_TRANSITION`.
+
+## Run 11: an autonomous bounty agent finds, checks, claims, delivers and is paid (PASS)
+
+The bounty agent (`apps/bounty-agent`) ran on a laptop as `settle-agent-14f651.testnet`, with a limit of 0.05 NEAR. Its deployment was the hosted reference API (`/fixture/fixed`). The client posted two bounties through the SDK, exactly as the web app's *Post a bounty* does. Nobody touched the agent after starting it. Its log:
+
+```
+16:37:55Z watching the bounty board  account=settle-agent-14f651.testnet deployment=https://settle-9ewd.onrender.com/fixture/fixed max=0.05 NEAR
+16:38:16Z claimed                    bounty=job_ZEPHd7QV1NUCs2XR tx=B6myXsg5tmsAp8wCW3kgQyJJsvZnxAsr1A733Q5rMixk near=0.02
+16:38:18Z submitted                  bounty=job_ZEPHd7QV1NUCs2XR milestone=health tx=6aaNC8UT8kgpMePvRrDbM8L7nJGK9HfBJukBoQMYpy3N
+16:38:22Z verified                   bounty=job_ZEPHd7QV1NUCs2XR milestone=health outcome=PASS
+16:38:33Z skipped                    bounty=job_NL_uA_aWA5FHjGFU reason=milestone guide needs human review
+```
+
+| Time (UTC) | Step |
+| --- | --- |
+| 16:38:07 | The client posts an API-check bounty, 0.02 NEAR ([`9G4AQfLF…`](https://testnet.nearblocks.io/txns/9G4AQfLF3jsYFCqA55HFY5hauS5iCxs13AAuKTx2HtFL)), and a human-review bounty, 0.01 NEAR ([`CgFBrgze…`](https://testnet.nearblocks.io/txns/CgFBrgze8At6qCLDsJNpzconU6Z2XpM8zzYvRTsvKiQ8)). |
+| 16:38:16 | **9 s after posting**, the agent claims the API bounty ([`B6myXsg5…`](https://testnet.nearblocks.io/txns/B6myXsg5tmsAp8wCW3kgQyJJsvZnxAsr1A733Q5rMixk)). Before claiming, it ran the bounty's locked plan against its own deployment and saw it pass. |
+| 16:38:18 – 16:38:22 | It submits ([`6aaNC8UT…`](https://testnet.nearblocks.io/txns/6aaNC8UT8kgpMePvRrDbM8L7nJGK9HfBJukBoQMYpy3N)), and the independent verifier signs **PASS**. |
+| 16:38:33 | It skips the human-review bounty: that work needs a person's judgment, which this agent does not offer. |
+| by 16:40:25 | The keeper records the result, finalizes after the 60 s window and pays. `get_agreement` at `final` finality: **`Completed`**, milestone `Paid`, 0.02 NEAR to `settle-agent-14f651.testnet`. |
+
+The human-review bounty was then cancelled by the client and refunded ([`3X1SxYqC…`](https://testnet.nearblocks.io/txns/3X1SxYqCuwx7e6ekizmwXFUUKur2aXPW8Cm4BadKsXqx)).
+
+What this does and does not show:
+- **Shown:** the whole autonomous loop (discover, check, claim, deliver, verified, paid) against the real contract and verifier.
+- **Not shown:** the "work" is the reference API the agent was configured to deliver. An agent that writes and deploys new code per bounty would plug into the same loop, but is not built.

@@ -55,6 +55,37 @@ importers:
         specifier: 2.1.5
         version: 2.1.5(@types/node@22.9.0)(lightningcss@1.33.0)
 
+  apps/bounty-agent:
+    dependencies:
+      '@settle/agent-sdk':
+        specifier: workspace:*
+        version: link:../../packages/agent-sdk
+      '@settle/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@settle/verifier':
+        specifier: workspace:*
+        version: link:../../services/verifier
+    devDependencies:
+      '@settle/api':
+        specifier: workspace:*
+        version: link:../api
+      '@settle/fixture-api':
+        specifier: workspace:*
+        version: link:../fixture-api
+      '@types/node':
+        specifier: 22.9.0
+        version: 22.9.0
+      near-api-js:
+        specifier: 7.3.1
+        version: 7.3.1
+      typescript:
+        specifier: 5.6.3
+        version: 5.6.3
+      vitest:
+        specifier: 2.1.5
+        version: 2.1.5(@types/node@22.9.0)(lightningcss@1.33.0)
+
   apps/fixture-api:
     devDependencies:
       '@types/node':

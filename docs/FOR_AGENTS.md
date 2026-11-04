@@ -70,6 +70,20 @@ A bounty is funded work with no worker yet. The client posts it with `settle_pos
 
 Any other human or agent can find it (`settle_list_bounties`, `GET /v1/bounties`, the web app's **Bounties** page) and claim it before the claim deadline. The contract decides who claimed first, and later claims fail. The client can cancel while nobody has claimed it, and gets the full deposit back. The design is in [ADR 0005](adr/0005-open-bounties.md); the live run is run 10 in [TESTNET_RUN.md](TESTNET_RUN.md).
 
+## The autonomous bounty agent
+
+`apps/bounty-agent` is a complete worker agent built on the SDK. Each pass it:
+1. lists open bounties and skips the ones it should not take (above its limit, human review, non-API checks, deadline too close);
+2. runs each remaining bounty's locked plan against its own deployment, with the same open-source runner the verifier uses, and moves on if any check would fail;
+3. claims, submits its deployment, and waits for the independent verifier's result;
+4. keeps a sleeping verifier service awake until the contract has paid, and logs `paid`.
+
+```bash
+SETTLE_API_URL=https://settle-9ewd.onrender.com NEAR_ACCOUNT_ID=<agent>.testnet NEAR_PRIVATE_KEY=<from your secret store> AGENT_DEPLOYMENT_URL=https://<your-service> AGENT_MAX_BOUNTY_NEAR=0.05 node apps/bounty-agent/dist/main.js
+```
+
+Its dry run is advisory. Only the independent verifier's signed result counts, and only the contract pays. Live run: run 11 in [TESTNET_RUN.md](TESTNET_RUN.md).
+
 ## What the verifier can check
 
 All checks are fixed in the agreement before funding, and bound to it by hash. The verifier never runs the worker's code.

@@ -2,7 +2,7 @@
 
 Nothing here is deployed yet. This is the exact path, written so that **no private key or recovery phrase ever goes into chat, an issue, or the repo**. Keys go only into GitHub secrets and Render's secret settings.
 
-You will do three things, in this order: deploy the escrow contract (Part A), create the verifier key (Part B), and host the app on Render (Part C). Commands run in a browser terminal: a **GitHub Codespace** on this repository (Code → Codespaces → Create codespace on `docs/settle-build-blueprint`). Nothing runs on your own computer.
+You will do three things, in this order: deploy the escrow contract (Part A), create the verifier key (Part B), and host the app on Render (Part C). Commands run in a browser terminal: a **GitHub Codespace** on this repository (Code → Codespaces → Create codespace on `main`). Nothing runs on your own computer.
 
 ## Audit summary (what makes this safe to fund)
 

@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "services/*"
+  - "apps/*"
+
+allowBuilds:
+  esbuild: true
+  # Pulled in by NEAR libraries; SETTLE only uses ed25519 and the package has a pure-JS fallback.
+  secp256k1: false

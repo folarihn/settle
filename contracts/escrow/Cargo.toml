@@ -1,0 +1,48 @@
+[package]
+name = "settle-escrow"
+version = "0.1.0"
+edition = "2021"
+publish = false
+repository = "https://github.com/folarihn/settle"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Real-node integration tests (tests/sandbox.rs). Linux/macOS only; see SANDBOX.md.
+sandbox = ["dep:near-workspaces", "dep:tokio"]
+
+[dependencies]
+near-sdk = "5.30.0"
+
+# Only pulled in by the `sandbox` feature and never for the wasm target, so they cannot
+# end up in the contract. They live here rather than in dev-dependencies because
+# dev-dependencies cannot be optional, and plain `cargo test` should stay light.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+near-workspaces = { version = "0.24.0", optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"], optional = true }
+
+[dev-dependencies]
+near-sdk = { version = "5.30.0", features = ["unit-testing"] }
+ed25519-dalek = "2.1.1"
+
+[[test]]
+name = "sandbox"
+path = "tests/sandbox.rs"
+required-features = ["sandbox"]
+
+# `cargo near build reproducible-wasm` (needs Docker and a clean, committed git tree).
+# NEP-330: the image is identified by its digest; the tag is descriptive only.
+[package.metadata.near.reproducible_build]
+image = "sourcescan/cargo-near:0.22.0-rust-1.97.1"
+image_digest = "sha256:7467038bdddc86484b73b416eeadce926ff59013e128e53dec5a19e1cb4b2234"
+passed_env = []
+container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked"]
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true

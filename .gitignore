@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+target/
+.near-credentials/
+neardev/
+
+# Dev-only preview session for apps/web (see apps/web/vite.config.ts); never commit.
+.preview-session.json

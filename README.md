@@ -66,7 +66,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/BUILD_PLAN.md](docs/BUIL
 
 ### MVP boundaries
 
-Build one end-to-end demonstrable software-development agreement. Support both human and agent clients/workers through the same service layer. Two milestone types only: `AUTOMATED` and `HUMAN_REVIEW`. One NEAR testnet asset (native NEAR in MVP, denomination in yoctoNEAR); no mainnet money. One approved offchain verifier and explicit dispute authority. No marketplace, arbitrary AI judging, token, NFT, arbitrary user-supplied container privileges, or complex reputation system.
+Build one end-to-end demonstrable software-development agreement. Support both human and agent clients/workers through the same service layer. Two milestone types only: `AUTOMATED` and `HUMAN_REVIEW`. One NEAR testnet asset (native NEAR in MVP, denomination in yoctoNEAR); no mainnet money. One approved offchain verifier and explicit dispute authority. Open bounties are a plain list of funded work (first claimer wins); there is no marketplace search, matching or bidding, and no arbitrary AI judging, token, NFT, arbitrary user-supplied container privileges, or complex reputation system.
 
 ### Proposed stack
 

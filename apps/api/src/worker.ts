@@ -68,6 +68,7 @@ export async function runWorkerLoop(
   idleMs = 1000,
   keeper?: { tick: (jobId?: string) => Promise<number> },
   keeperEveryMs = 15_000,
+  webhooks?: { deliverDue: () => Promise<number> },
 ): Promise<never> {
   let lastKeep = 0;
   for (;;) {
@@ -77,6 +78,8 @@ export async function runWorkerLoop(
         lastKeep = Date.now();
         await keeper.tick();
       }
+      // Notifications only: a failed delivery is retried later and never blocks verification.
+      if (webhooks) await webhooks.deliverDue();
       if (processed === 0) await new Promise((r) => setTimeout(r, idleMs));
     } catch (e) {
       log.error(e, "verification worker iteration failed");

@@ -5,6 +5,7 @@ import { createPgDb, migrate } from "./db.js";
 import { JobService } from "./jobs.js";
 import { VerificationService } from "./verifications.js";
 import { createRelayer, Keeper } from "./keeper.js";
+import { WebhookService } from "./webhooks.js";
 import { runWorkerLoop, startWakeServer } from "./worker.js";
 
 /**
@@ -38,4 +39,4 @@ if (relayerKey) {
 if (process.env.PORT) startWakeServer(Number(process.env.PORT));
 console.log(`verification worker started for verifier key ${config.verifierPublicKey.slice(0, 12)}...`);
 console.log(keeper ? `automatic record/finalize/payout enabled as ${config.verifierAccount}` : "automatic record/finalize/payout disabled");
-await runWorkerLoop(new VerificationService(db, jobs, config), seed, { error: (o, msg) => console.error(msg, o) }, 1000, keeper);
+await runWorkerLoop(new VerificationService(db, jobs, config), seed, { error: (o, msg) => console.error(msg, o) }, 1000, keeper, 15_000, new WebhookService(db));

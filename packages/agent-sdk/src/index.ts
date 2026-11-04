@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { Account, type KeyPairString } from "near-api-js";
 
 /**
@@ -44,9 +45,50 @@ export interface SettleAgentOptions {
 
 export type Action = { type: string; milestoneId?: string } & Record<string, unknown>;
 
+export interface MilestoneView {
+  id: string;
+  status: string;
+  submission: { seq: number; artifactHash: string; uri?: string; submittedAt: number } | null;
+  revisionsUsed: number;
+  challengeEndsAt: number | null;
+  lastVerification: { outcome: string; evidenceDigest: string } | null;
+  settlementProposal: { proposer: string; workerYocto: string } | null;
+  allocation: { workerYocto: string; clientYocto: string } | null;
+}
+
+/** A job as the API returns it: the offchain record, the viewer's roles and the calls they may sign. */
+export interface JobView {
+  id: string;
+  version: number;
+  roles: string[];
+  state: {
+    status: string;
+    termsHash: string;
+    acceptedBy: { client: boolean; worker: boolean };
+    terms: {
+      client: { kind: string; nearAccountId: string };
+      worker: { kind: string; nearAccountId: string };
+      totalYocto: string;
+      challengePeriodSec: number;
+      fundingDeadline: number;
+      expiresAt: number;
+      milestones: ({ id: string; title: string; type: "AUTOMATED" | "HUMAN_REVIEW"; amountYocto: string } & Record<string, unknown>)[];
+    };
+    milestones: MilestoneView[];
+  };
+  calls: { createAgreement?: ContractCall; fund?: ContractCall; payout: Record<string, ContractCall> };
+}
+
+export interface ChainSnapshot {
+  agreement: { status: string; milestones: { status: string; submission: { seq: number } | null; challenge_ends_at_ms?: number }[] } | null;
+  error: string | null;
+  termsMatch: boolean | null;
+  divergences: { milestoneId: string; offchain: string; onchain: string }[];
+}
+
 export class SettleAgent {
   private token: string | null = null;
-  private wakeUrl: string | null = null;
+  wakeUrl: string | null = null;
   private lastWake = 0;
   private account: Account;
   private executor: Executor;
@@ -94,7 +136,7 @@ export class SettleAgent {
     this.token = token;
   }
 
-  private call<T>(method: "GET" | "POST", path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
+  private call<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
     if (!this.token) throw new Error("not logged in");
     return request<T>(this.opts.apiUrl, method, path, body, { authorization: `Bearer ${this.token}`, ...headers });
   }
@@ -102,8 +144,11 @@ export class SettleAgent {
   config() {
     return request<Record<string, unknown>>(this.opts.apiUrl, "GET", "/v1/config");
   }
+  get accountId(): string {
+    return this.opts.accountId;
+  }
   createJob(input: unknown, idempotencyKey?: string) {
-    return this.call<{ id: string; state: { termsHash: string } } & Record<string, unknown>>(
+    return this.call<JobView>(
       "POST",
       "/v1/jobs",
       input,
@@ -111,17 +156,17 @@ export class SettleAgent {
     );
   }
   listJobs() {
-    return this.call<{ jobs: { id: string }[] }>("GET", "/v1/jobs");
+    return this.call<{ jobs: JobView[] }>("GET", "/v1/jobs");
   }
   getJob(id: string) {
-    return this.call<{ job: { state: { termsHash: string; milestones: { id: string; status: string }[] } } & Record<string, unknown>; chain: unknown }>(
+    return this.call<{ job: JobView; chain: ChainSnapshot }>(
       "GET",
       `/v1/jobs/${encodeURIComponent(id)}`,
     );
   }
   /** Applies a domain action (SUBMIT, APPROVE, ...) and returns the contract call to sign, if any. */
   act(id: string, action: Action, idempotencyKey?: string) {
-    return this.call<{ job: unknown; contractCall: ContractCall | null }>(
+    return this.call<{ job: JobView; contractCall: ContractCall | null }>(
       "POST",
       `/v1/jobs/${encodeURIComponent(id)}/actions`,
       action,
@@ -138,7 +183,38 @@ export class SettleAgent {
     return this.executor.execute(call);
   }
   sync(id: string) {
-    return this.call<{ job: unknown; chain: unknown }>("POST", `/v1/jobs/${encodeURIComponent(id)}/sync`);
+    return this.call<{ job: JobView; chain: ChainSnapshot }>("POST", `/v1/jobs/${encodeURIComponent(id)}/sync`);
+  }
+  /**
+   * Syncs until `done` holds or the tries run out. Right after a transaction the RPC may not
+   * show it at `final` yet, so a single sync can miss it.
+   */
+  async syncUntil(id: string, done: (job: JobView) => boolean, { tries = 10, intervalMs = 1500 } = {}) {
+    let last = await this.sync(id);
+    for (let i = 1; i < tries && !done(last.job); i++) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+      last = await this.sync(id);
+    }
+    return last;
+  }
+
+  /** Client: deposit exactly the agreed total into escrow (the contract checks the amount). */
+  async fund(id: string): Promise<{ txHash: string; job: JobView }> {
+    const { job } = await this.getJob(id);
+    if (!job.calls.fund) throw new Error(`job ${id} is ${job.state.status}; only a DRAFT job can be funded`);
+    const txHash = await this.execute(job.calls.fund);
+    const synced = await this.syncUntil(id, (j) => j.state.status !== "DRAFT");
+    return { txHash, job: synced.job };
+  }
+
+  /** Either party: send the payout of a claimable milestone (the contract pays the fixed split). */
+  async claimPayment(id: string, milestoneId: string): Promise<{ txHash: string; job: JobView }> {
+    const { job } = await this.getJob(id);
+    const call = job.calls.payout[milestoneId];
+    if (!call) throw new Error(`milestone ${milestoneId} is not claimable`);
+    const txHash = await this.execute(call);
+    const synced = await this.syncUntil(id, (j) => j.state.milestones.find((m) => m.id === milestoneId)?.status !== "CLAIMABLE", { tries: 5 });
+    return { txHash, job: synced.job };
   }
   requestVerification(id: string, milestoneId: string) {
     return this.call<Verification>("POST", `/v1/jobs/${encodeURIComponent(id)}/milestones/${encodeURIComponent(milestoneId)}/verifications`);
@@ -149,11 +225,25 @@ export class SettleAgent {
   evidence(verificationId: string) {
     return this.call<{ evidence: unknown; matchesReport: boolean }>("GET", `/v1/verifications/${encodeURIComponent(verificationId)}/evidence`);
   }
+  /** Registers an HTTPS URL that receives every event on your jobs. Keep the returned secret to verify signatures. */
+  createWebhook(url: string) {
+    return this.call<{ id: string; url: string; secret: string }>("POST", "/v1/webhooks", { url });
+  }
+  listWebhooks() {
+    return this.call<{ webhooks: { id: string; url: string; createdAt: number }[] }>("GET", "/v1/webhooks");
+  }
+  deleteWebhook(id: string) {
+    return this.call<unknown>("DELETE", `/v1/webhooks/${encodeURIComponent(id)}`);
+  }
+  webhookDeliveries(id: string) {
+    return this.call<{ deliveries: Record<string, unknown>[] }>("GET", `/v1/webhooks/${encodeURIComponent(id)}/deliveries`);
+  }
+
   /**
    * The deployment's verifier may sleep when idle and only wakes for outside traffic, so the
    * agent nudges it (at most every 10 s) while its verification is queued.
    */
-  private wakeVerifier(): void {
+  wakeVerifier(): void {
     if (!this.wakeUrl || Date.now() - this.lastWake < 10_000) return;
     this.lastWake = Date.now();
     fetch(`${this.wakeUrl.replace(/\/+$/, "")}/kick`, { method: "POST", body: "", signal: AbortSignal.timeout(90_000) }).catch(() => undefined);
@@ -179,6 +269,19 @@ export interface Verification {
   submissionSeq: number;
   error: string | null;
   contractCall: ContractCall | null;
+}
+
+/**
+ * Checks a webhook's `settle-signature` header (`t=<ms>,v1=<hex>`) against the raw request
+ * body. Rejects signatures older than `toleranceMs` so a captured delivery cannot be replayed later.
+ */
+export function verifyWebhookSignature(secret: string, header: string | undefined, rawBody: string, { toleranceMs = 5 * 60_000, now = Date.now() } = {}): boolean {
+  const m = /^t=(\d{1,15}),v1=([0-9a-f]{64})$/.exec(header ?? "");
+  if (!m) return false;
+  const t = Number(m[1]);
+  if (Math.abs(now - t) > toleranceMs) return false;
+  const expected = createHmac("sha256", secret).update(`${t}.${rawBody}`).digest();
+  return timingSafeEqual(expected, Buffer.from(m[2]!, "hex"));
 }
 
 async function request<T>(base: string, method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {

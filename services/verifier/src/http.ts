@@ -27,6 +27,8 @@ export interface RequestOptions {
   body?: string;
   timeoutMs: number;
   maxResponseBytes: number;
+  /** Extra request headers (e.g. a webhook signature); cannot override the content type. */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -63,6 +65,7 @@ export function sendRequest(opts: RequestOptions): Promise<HttpResponse> {
         headers: {
           accept: "application/json",
           "user-agent": "settle-verifier/0.1",
+          ...opts.headers,
           ...(opts.body !== undefined ? { "content-type": "application/json" } : {}),
         },
         agent: false,

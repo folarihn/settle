@@ -116,6 +116,27 @@ const MIGRATIONS = [
      created_at BIGINT NOT NULL,
      PRIMARY KEY (account_id, key)
    )`,
+  `CREATE TABLE IF NOT EXISTS webhooks (
+     id TEXT PRIMARY KEY,
+     account_id TEXT NOT NULL,
+     url TEXT NOT NULL,
+     secret TEXT NOT NULL,
+     created_at BIGINT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS webhooks_account ON webhooks (account_id)`,
+  `CREATE TABLE IF NOT EXISTS webhook_deliveries (
+     id TEXT PRIMARY KEY,
+     webhook_id TEXT NOT NULL REFERENCES webhooks(id),
+     job_id TEXT NOT NULL,
+     payload JSONB NOT NULL,
+     attempts INTEGER NOT NULL,
+     next_attempt_at BIGINT NOT NULL,
+     delivered_at BIGINT,
+     last_status INTEGER,
+     last_error TEXT,
+     created_at BIGINT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS webhook_deliveries_due ON webhook_deliveries (next_attempt_at) WHERE delivered_at IS NULL`,
 ];
 
 export async function migrate(db: Db): Promise<void> {

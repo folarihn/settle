@@ -12,7 +12,9 @@ import { ApiError, toErrorResponse } from "./errors.js";
 import { JobService } from "./jobs.js";
 import { LIMITS, RateLimiter, type Limits } from "./rate-limit.js";
 import { VerificationService } from "./verifications.js";
+import { WebhookService } from "./webhooks.js";
 import { workerWaker } from "./worker.js";
+import type { NetworkPolicy } from "@settle/verifier";
 
 export interface AppDeps {
   db: Db;
@@ -21,16 +23,19 @@ export interface AppDeps {
   now?: () => number;
   logger?: boolean;
   limits?: Limits;
+  /** Outbound network policy for webhook URLs; tests open loopback for a local receiver. */
+  networkPolicy?: NetworkPolicy;
 }
 
 const IdParams = z.object({ id: z.string().min(1).max(80) });
 const MilestoneParams = IdParams.extend({ milestoneId: z.string().min(1).max(64) });
 
-export function buildApp({ db, chain, config, now = Date.now, logger = false, limits = LIMITS }: AppDeps) {
+export function buildApp({ db, chain, config, now = Date.now, logger = false, limits = LIMITS, networkPolicy }: AppDeps) {
   // Behind a reverse proxy (any hosted deployment), trust X-Forwarded-For for client IPs.
   const app = Fastify({ logger, bodyLimit: 256 * 1024, trustProxy: config.trustProxy });
   const limiter = new RateLimiter(now);
   const jobs = new JobService(db, chain, config, now);
+  const webhooks = new WebhookService(db, now, networkPolicy);
   const verifications = new VerificationService(db, jobs, config, now, config.workerWakeUrl ? workerWaker(config.workerWakeUrl, app.log) : undefined);
 
   app.setErrorHandler((err, req, reply) => {
@@ -156,6 +161,15 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
   app.get("/v1/verifications/:id", async (req) => verifications.get(await auth(req), IdParams.parse(req.params).id));
   app.get("/v1/verifications/:id/evidence", async (req) => verifications.evidence(await auth(req), IdParams.parse(req.params).id));
 
+  // ---- webhooks (sent by the worker process, never from here) ----
+  app.post("/v1/webhooks", async (req, reply) => reply.code(201).send(await webhooks.create(await auth(req), req.body)));
+  app.get("/v1/webhooks", async (req) => ({ webhooks: await webhooks.list(await auth(req)) }));
+  app.delete("/v1/webhooks/:id", async (req, reply) => {
+    await webhooks.remove(await auth(req), IdParams.parse(req.params).id);
+    return reply.code(204).send();
+  });
+  app.get("/v1/webhooks/:id/deliveries", async (req) => ({ deliveries: await webhooks.deliveries(await auth(req), IdParams.parse(req.params).id) }));
+
   // ---- controlled demo API and web app ----
   if (config.enableFixture) {
     app.get("/fixture/*", async (req, reply) => {
@@ -173,5 +187,5 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
     );
   }
 
-  return { app, jobs, verifications };
+  return { app, jobs, verifications, webhooks };
 }

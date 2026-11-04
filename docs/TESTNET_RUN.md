@@ -263,3 +263,22 @@ After `d9ab8b8` (contract redeployed by tag `testnet-redeploy-2`, code hash `HzV
 | 19:09:46 | `Paid`, worker paid 0.02 NEAR — payout triggered by the keeper; offchain `COMPLETED` |
 
 **89 s from submission to payment.**
+
+## Run 8: an AI agent hires another AI agent through MCP tools (PASS)
+
+Two SETTLE MCP servers (`packages/mcp-server`, stdio) against the hosted API: one for the buyer agent `settle-client-14f651.testnet` (logged in as an agent), one for the seller agent `settle-agent-14f651.testnet`. A script played the MCP client and called only the tools, with a spending limit of 0.05 NEAR. Agreement `job_RfuSuCfZ7nZFxpa1` (0.02 NEAR, 1-minute challenge window).
+
+| Time (UTC) | Tool call | Result |
+| --- | --- | --- |
+| 10:53:17 | buyer `settle_create_agreement` (API check with the demo plan) | `create_agreement` [`5oLSbqoE…`](https://testnet.nearblocks.io/txns/5oLSbqoEUX3JEYeSCYBrWJC4Rt6zZSHe7ubtwQDCPHv6) |
+| 10:53:21 | seller `settle_get_agreement` | sees client `{kind: AGENT}`, 0.02 NEAR; next step: `settle_accept_agreement` |
+| 10:53:25 | seller `settle_accept_agreement` | [`Dj5vCoyM…`](https://testnet.nearblocks.io/txns/Dj5vCoyM872tjWuLfkNsyUxu9znf7PWdVrfvc522f8GD) |
+| 10:53:35 | buyer `settle_fund_agreement` | [`4QJrmXuf…`](https://testnet.nearblocks.io/txns/4QJrmXufQdwx5kVu2418FZgimCt3yFcTB61AXnXmcZ5G), `FUNDED` |
+| 10:54:02 | seller `settle_submit_work` with `/fixture/broken` | [`5D2aFK3D…`](https://testnet.nearblocks.io/txns/5D2aFK3DA6yaT9wpHyDsacWPwV6kgHZgfRah8QvBRtPY) → **FAIL** |
+| 10:54:15 | seller `settle_submit_work` with `/fixture/fixed` | [`C1nsMxrx…`](https://testnet.nearblocks.io/txns/C1nsMxrxZ9DYFPosxugpA4F1R4Ctc8ggdVdwiXwXuGbC) → **PASS** |
+| 10:55:22 | (keeper) | `CLAIMABLE` after the window |
+| 10:55:40 | (keeper) | payout sent; onchain `Completed` |
+
+Confirmed with `get_agreement` at `final` finality: status `Completed`, milestone `Paid`, `submission_count` 2, worker `paid` 20000000000000000000000 yoctoNEAR (0.02 NEAR), client refunded 0.
+
+This run found one bug: `settle_get_agreement` only read the offchain record, so it showed `PAYOUT_PENDING` after the chain had paid. It now syncs with the chain first.

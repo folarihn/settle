@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { KeyPair } from "near-api-js";
 import { computeOnchainTermsHash, toContractTerms } from "@settle/domain";
 import { as, CLIENT, jobInput, login, startHarness, WORKER, type Harness } from "../../../apps/api/test/harness.js";
-import { SettleAgent, SettleApiError, type ContractCall } from "../src/index.js";
+import { signWebhook } from "../../../apps/api/src/webhooks.js";
+import { SettleAgent, SettleApiError, verifyWebhookSignature, type ContractCall } from "../src/index.js";
 
 let h: Harness;
 let apiUrl: string;
@@ -77,5 +78,17 @@ describe("agent SDK against the real API", () => {
     await expect(
       SettleAgent.connect({ apiUrl, accountId: WORKER, privateKey: key.toString() as `ed25519:${string}`, executor: { execute: async () => "" } }),
     ).rejects.toBeInstanceOf(SettleApiError);
+  });
+
+  it("verifies webhook signatures made by the API, and rejects tampered, foreign or stale ones", () => {
+    const secret = `whsec_${"ab".repeat(32)}`;
+    const body = JSON.stringify({ type: "job.event", jobId: "job_1" });
+    const now = Date.now();
+    const header = signWebhook(secret, body, now);
+    expect(verifyWebhookSignature(secret, header, body, { now })).toBe(true);
+    expect(verifyWebhookSignature(secret, header, body.replace("job_1", "job_2"), { now })).toBe(false);
+    expect(verifyWebhookSignature(`whsec_${"cd".repeat(32)}`, header, body, { now })).toBe(false);
+    expect(verifyWebhookSignature(secret, header, body, { now: now + 6 * 60_000 })).toBe(false);
+    expect(verifyWebhookSignature(secret, undefined, body, { now })).toBe(false);
   });
 });

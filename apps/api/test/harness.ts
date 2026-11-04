@@ -48,6 +48,8 @@ export interface Harness {
   app: ReturnType<typeof buildApp>["app"];
   verifications: ReturnType<typeof buildApp>["verifications"];
   fixtureOrigin: string;
+  /** Outbound policy used by the verifier and webhooks; tests add their local origins to it. */
+  policy: { insecureTestOrigins: string[]; testAddresses: string[] };
   runVerifier: () => Promise<number>;
   close: () => Promise<void>;
 }
@@ -61,7 +63,9 @@ export async function startHarness(db?: Db, overrides: Partial<Config> = {}): Pr
   const chain = new FakeChain();
   // Generous limits: this shared app logs in many times; rate limiting has its own test.
   const limits = { authPerIp: { max: 10_000, windowMs: 60_000 }, verificationsPerAccount: { max: 10_000, windowMs: 60_000 } };
-  const { app, verifications } = buildApp({ db: database, chain, config: { ...config, ...overrides }, limits });
+  // The verifier's default policy blocks loopback; only these tests open it for local servers.
+  const policy = { insecureTestOrigins: [] as string[], testAddresses: ["127.0.0.1"] };
+  const { app, verifications } = buildApp({ db: database, chain, config: { ...config, ...overrides }, limits, networkPolicy: policy });
 
   const fixture = createServer((req, res) => {
     const r = fixtureResponse(req.method ?? "GET", req.url ?? "/");
@@ -69,8 +73,7 @@ export async function startHarness(db?: Db, overrides: Partial<Config> = {}): Pr
   });
   await new Promise<void>((r) => fixture.listen(0, "127.0.0.1", r));
   const fixtureOrigin = `http://127.0.0.1:${(fixture.address() as AddressInfo).port}`;
-  // The verifier's default policy blocks loopback; only these tests open it for the local fixture.
-  const policy = { insecureTestOrigins: [fixtureOrigin], testAddresses: ["127.0.0.1"] };
+  policy.insecureTestOrigins.push(fixtureOrigin);
 
   return {
     db: database,
@@ -78,6 +81,7 @@ export async function startHarness(db?: Db, overrides: Partial<Config> = {}): Pr
     app,
     verifications,
     fixtureOrigin,
+    policy,
     runVerifier: () => drainQueue(verifications, { seedHex: VERIFIER_SEED, policy }),
     close: async () => {
       await app.close();
@@ -135,11 +139,12 @@ export function jobInput() {
 
 /** Authenticated request helper. */
 export function as(h: Harness, token: string) {
-  const call = (method: "GET" | "POST", url: string, payload?: unknown, headers: Record<string, string> = {}) =>
+  const call = (method: "GET" | "POST" | "DELETE", url: string, payload?: unknown, headers: Record<string, string> = {}) =>
     h.app.inject({ method, url, headers: { authorization: `Bearer ${token}`, ...headers }, ...(payload !== undefined ? { payload: payload as object } : {}) });
   return {
     get: (url: string) => call("GET", url),
     post: (url: string, payload: unknown = {}, headers?: Record<string, string>) => call("POST", url, payload, headers),
+    delete: (url: string) => call("DELETE", url),
   };
 }
 

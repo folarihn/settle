@@ -25,6 +25,7 @@ import { ChainUnavailable, type ChainReader } from "./chain.js";
 import type { Config } from "./config.js";
 import type { Db, Sql } from "./db.js";
 import { ApiError } from "./errors.js";
+import { enqueueWebhooks } from "./webhooks.js";
 
 /**
  * Job workflow service. It owns no business rules: every change goes through the
@@ -261,5 +262,6 @@ export class JobService {
       JSON.stringify(fields),
       at,
     ]);
+    await enqueueWebhooks(sql, state, actor, type, fields, at);
   }
 }

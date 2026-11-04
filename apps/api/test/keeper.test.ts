@@ -80,4 +80,26 @@ describe("keeper: automatic record, finalize and payout", () => {
     expect(await keeper.tick(job.id)).toBe(0);
     expect(sent).toHaveLength(0);
   });
+
+  it("brings a lagging record up to date with a payout someone else sent, without sending anything", async () => {
+    const client = as(h, await login(h, "client.testnet"));
+    const agent = as(h, await login(h, WORKER, "AGENT"));
+    const job = (await client.post("/v1/jobs", jobInput())).json();
+    await agent.post(`/v1/jobs/${job.id}/actions`, { type: "ACCEPT_TERMS", termsHash: job.state.termsHash });
+    const chainView = onchainFunded((await client.get(`/v1/jobs/${job.id}`)).json().job.state);
+    h.chain.agreements.set(job.id, chainView);
+    await client.post(`/v1/jobs/${job.id}/sync`);
+    await agent.post(`/v1/jobs/${job.id}/actions`, { type: "SUBMIT", milestoneId: "design", artifactHash: "d1" });
+    await client.post(`/v1/jobs/${job.id}/actions`, { type: "APPROVE", milestoneId: "design" });
+    // The worker paid it out from their own wallet; nobody synced afterwards.
+    chainView.milestones[1]!.status = "Paid";
+
+    const sent: ContractCall[] = [];
+    const relayer: Relayer = { accountId: config.verifierAccount, send: async (c) => (sent.push(c), "tx") };
+    const keeper = new Keeper(h.db, new JobService(h.db, h.chain, config), h.chain, relayer, config, { info: () => undefined, warn: () => undefined });
+    expect(await keeper.tick(job.id)).toBe(0);
+    expect(sent).toHaveLength(0);
+    expect((await client.get(`/v1/jobs/${job.id}`)).json().job.state.milestones[1].status).toBe("PAID");
+  });
 });
+

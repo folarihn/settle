@@ -1,4 +1,4 @@
-import { contractCallFor, payoutCall, type AgreementState, type ContractCall, type VerificationReport } from "@settle/domain";
+import { contractCallFor, milestoneStatusFromChain, payoutCall, type AgreementState, type ContractCall, type VerificationReport } from "@settle/domain";
 import { Account, type KeyPairString } from "near-api-js";
 import type { ChainReader } from "./chain.js";
 import type { Config } from "./config.js";
@@ -107,7 +107,10 @@ export class Keeper {
         sent += await this.send(jobId, payoutCall(state.terms, m.id), "payout");
       }
     }
-    if (sent > 0) await this.jobs.syncFromChain({ accountId: this.config.verifierAccount, kind: "AGENT" }, jobId).catch(() => undefined);
+    // Mirror the chain after our own calls, and whenever the record lags it (e.g. a payout
+    // someone else sent), so dashboards and webhooks catch up without anyone opening the page.
+    const lagging = state.milestones.some((m, i) => onchain.milestones[i] && milestoneStatusFromChain(onchain.milestones[i]!.status) !== m.status);
+    if (sent > 0 || lagging) await this.jobs.syncFromChain({ accountId: this.config.verifierAccount, kind: "AGENT" }, jobId).catch(() => undefined);
     return sent;
   }
 

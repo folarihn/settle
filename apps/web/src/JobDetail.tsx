@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, nearToYocto, yoctoToNear, type ChainSnapshot, type ContractCall, type Job, type Milestone, type MilestoneTerms, type Verification } from "./api";
 import type { Session } from "./App";
-import { explorerTx, sendCall } from "./wallet";
+import { fmtDate, isUnclaimedBounty, money, nextAction, planKind, title } from "./derive";
+import { Timeline } from "./Timeline";
+import { AgreementBadge, Badge, MilestoneBadge, MoneyBar, NextStep, Stepper } from "./ui";
+import { explorerAccount, explorerTx, sendCall } from "./wallet";
 
 interface TxRecord {
   label: string;
@@ -130,119 +133,185 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
   const signOnly = (label: string, call: ContractCall) => run(label, () => sign(label, call));
 
   if (error && !job) return <p className="error">{error}</p>;
-  if (!job) return <p className="muted">Loading...</p>;
+  if (!job) return <p className="muted">Loading the agreement and reading the escrow contract…</p>;
 
   const { terms } = job.state;
   const is = (role: string) => job.roles.includes(role);
   const onchain = chain?.agreement;
   const net = session.config.network;
+  const me = session.accountId;
+  const unclaimed = isUnclaimedBounty(job);
+  const you = (account: string) => (account === me ? <Badge tone="accent">you</Badge> : null);
 
   return (
     <div className="stack">
+      <a href="#/" className="small">
+        ← Dashboard
+      </a>
+
       <section className="card">
-        <div className="row">
-          <h2>{job.id}</h2>
+        <div className="card-head">
+          <div style={{ minWidth: 0 }}>
+            <div className="row">
+              <AgreementBadge status={job.state.status} />
+              {terms.openBounty && job.state.status !== "OPEN" && <Badge tone="violet">bounty</Badge>}
+              <span className="mono faint">{job.id}</span>
+            </div>
+            <h1 style={{ marginTop: 8, fontSize: "1.5rem" }}>{title(job)}</h1>
+          </div>
           <span className="spacer" />
-          <button className="secondary" disabled={!!busy} onClick={() => run("sync", () => api("POST", `/v1/jobs/${jobId}/sync`).then(() => undefined))}>
-            Refresh from chain
-          </button>
+          <div style={{ textAlign: "right" }}>
+            <div className="amount" style={{ fontSize: "1.6rem" }}>
+              {yoctoToNear(terms.totalYocto)} NEAR
+            </div>
+            <div className="muted small">{terms.milestones.length === 1 ? "1 milestone" : `${terms.milestones.length} milestones`}</div>
+          </div>
         </div>
-        <dl className="grid">
-          <dt>Your role</dt>
-          <dd>{job.roles.join(", ")}</dd>
-          <dt>Client</dt>
-          <dd>{terms.client.nearAccountId}</dd>
-          <dt>Worker</dt>
-          <dd>
-            {terms.openBounty && terms.worker.nearAccountId === "open-bounty" ? (
-              <>open bounty, not claimed yet (claim by {new Date(terms.fundingDeadline).toLocaleString()})</>
+
+        <NextStep action={nextAction(job, me)} />
+
+        <div style={{ marginTop: 18 }}>
+          <MoneyBar m={money(job)} />
+        </div>
+
+        <div className="parties" style={{ marginTop: 18 }}>
+          <div className="party">
+            <div className="role">Client {you(terms.client.nearAccountId)}</div>
+            <div className="mono">{terms.client.nearAccountId}</div>
+          </div>
+          <div className="party">
+            <div className="role">Worker {you(terms.worker.nearAccountId)}</div>
+            {unclaimed ? (
+              <div className="small">Not claimed yet · claim by {fmtDate(terms.fundingDeadline)}</div>
             ) : (
-              <>
-                {terms.worker.nearAccountId} ({terms.worker.kind.toLowerCase()})
-              </>
+              <div className="mono">
+                {terms.worker.nearAccountId} <span className="faint">({terms.worker.kind.toLowerCase()})</span>
+              </div>
             )}
-          </dd>
-          <dt>Resolver</dt>
-          <dd>{terms.disputeResolver}</dd>
-          <dt>Total</dt>
-          <dd>{yoctoToNear(terms.totalYocto)} NEAR</dd>
-          <dt>Offchain status</dt>
-          <dd>{job.state.status}</dd>
-          <dt>Onchain status</dt>
-          <dd>
-            {chain?.error ? <span className="error">chain unavailable: {chain.error}</span> : onchain ? onchain.status : "not created onchain yet"}
-            {chain?.termsMatch === false && <span className="error"> — onchain terms do not match; do not fund</span>}
-          </dd>
-          <dt>Terms hash (onchain)</dt>
-          <dd className="mono">{job.onchainTermsHash}</dd>
-        </dl>
+          </div>
+          <div className="party">
+            <div className="role">Verifier</div>
+            <div className="mono">{terms.verifierAuthority}</div>
+          </div>
+          <div className="party">
+            <div className="role">Resolver {you(terms.disputeResolver)}</div>
+            <div className="mono">{terms.disputeResolver}</div>
+          </div>
+        </div>
 
         {job.state.status === "DRAFT" && job.calls.postBounty && (
-          <div className="actions">
+          <div className="action-box">
             {is("client") && !onchain && !txs.some((t) => t.label === "post_bounty") && (
-              <button disabled={!!busy} onClick={() => signOnly("post_bounty", job.calls.postBounty!)}>
-                Post bounty onchain (deposits {yoctoToNear(terms.totalYocto)} NEAR + storage)
-              </button>
+              <div className="actions">
+                <button disabled={!!busy} onClick={() => signOnly("post_bounty", job.calls.postBounty!)}>
+                  Post bounty onchain
+                </button>
+                <span className="muted small">Deposits {yoctoToNear(terms.totalYocto)} NEAR plus storage; unused storage is refunded.</span>
+              </div>
             )}
             {!onchain && txs.some((t) => t.label === "post_bounty") && (
               <span className="muted">Waiting for the network to confirm post_bounty… this page refreshes itself.</span>
             )}
           </div>
         )}
-        {job.state.status === "OPEN" && (
-          <div className="actions">
-            {job.calls.claimBounty && (
-              <button disabled={!!busy} onClick={() => signOnly("claim_bounty", job.calls.claimBounty!)}>
-                Claim this bounty ({yoctoToNear(terms.totalYocto)} NEAR already in escrow)
-              </button>
-            )}
-            {job.calls.cancelBounty && (
-              <button className="secondary" disabled={!!busy} onClick={() => signOnly("cancel_bounty", job.calls.cancelBounty!)}>
-                Cancel bounty and refund
-              </button>
-            )}
+        {job.state.status === "OPEN" && (job.calls.claimBounty || job.calls.cancelBounty) && (
+          <div className="action-box">
+            <div className="actions">
+              {job.calls.claimBounty && (
+                <button disabled={!!busy} onClick={() => signOnly("claim_bounty", job.calls.claimBounty!)}>
+                  Claim this bounty
+                </button>
+              )}
+              {job.calls.cancelBounty && (
+                <button className="danger" disabled={!!busy} onClick={() => signOnly("cancel_bounty", job.calls.cancelBounty!)}>
+                  Cancel bounty and refund
+                </button>
+              )}
+            </div>
+            <span className="muted small">
+              {job.calls.claimBounty
+                ? `${yoctoToNear(terms.totalYocto)} NEAR is already in escrow. The first claim the contract executes wins; read the milestones below first.`
+                : "You get the whole deposit back. Not possible once someone has claimed it."}
+            </span>
           </div>
         )}
-        {job.state.status === "CANCELLED" && <p className="muted">This bounty was cancelled before anyone claimed it; the deposit was refunded to the client.</p>}
 
         {job.state.status === "DRAFT" && !job.calls.postBounty && (
-          <div className="actions">
-            {is("client") && !onchain && job.calls.createAgreement && !txs.some((t) => t.label === "create_agreement") && (
-              <button disabled={!!busy} onClick={() => signOnly("create_agreement", job.calls.createAgreement!)}>
-                Create onchain (storage deposit)
-              </button>
-            )}
-            {!onchain && txs.some((t) => t.label === "create_agreement") && (
-              <span className="muted">Waiting for the network to confirm create_agreement… this page refreshes itself.</span>
-            )}
-            {is("worker") && !job.state.acceptedBy.worker && (
-              <button disabled={!!busy || !onchain} onClick={() => act("accept_terms", { type: "ACCEPT_TERMS", termsHash: job.state.termsHash })}>
-                Accept terms {onchain ? "" : "(waiting for client to create onchain)"}
-              </button>
-            )}
-            {is("client") && (
-              <button disabled={!!busy || !job.state.acceptedBy.worker || !onchain} onClick={() => signOnly("fund", job.calls.fund!)}>
-                Fund escrow ({yoctoToNear(terms.totalYocto)} NEAR) {job.state.acceptedBy.worker ? "" : "— waiting for worker to accept"}
-              </button>
-            )}
+          <div className="action-box">
+            <div className="actions">
+              {is("client") && !onchain && job.calls.createAgreement && !txs.some((t) => t.label === "create_agreement") && (
+                <button disabled={!!busy} onClick={() => signOnly("create_agreement", job.calls.createAgreement!)}>
+                  Create onchain (storage deposit)
+                </button>
+              )}
+              {is("worker") && !job.state.acceptedBy.worker && (
+                <button disabled={!!busy || !onchain} onClick={() => act("accept_terms", { type: "ACCEPT_TERMS", termsHash: job.state.termsHash })}>
+                  Accept terms
+                </button>
+              )}
+              {is("client") && (
+                <button disabled={!!busy || !job.state.acceptedBy.worker || !onchain} onClick={() => signOnly("fund", job.calls.fund!)}>
+                  Fund escrow · {yoctoToNear(terms.totalYocto)} NEAR
+                </button>
+              )}
+            </div>
+            <span className="muted small">
+              {!onchain && txs.some((t) => t.label === "create_agreement")
+                ? "Waiting for the network to confirm create_agreement… this page refreshes itself."
+                : !onchain
+                  ? "The client creates the agreement onchain first; then the worker accepts and the client funds."
+                  : !job.state.acceptedBy.worker
+                    ? "Waiting for the worker to accept these exact terms before funding."
+                    : "Funding deposits exactly the total; the terms are locked from then on."}
+            </span>
           </div>
         )}
       </section>
 
-      {busy && <p className="notice">Working on {busy}... {pendingCall && "Approve the transaction in your wallet popup."}</p>}
-      {error && <p className="error">{error}</p>}
+      {busy && (
+        <div className="callout warn">
+          <span className="icon">⏳</span>
+          <div>
+            <strong>Working on {busy.replace(/_/g, " ")}…</strong>
+            {pendingCall && <span>Approve the transaction in your wallet window.</span>}
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="callout warn">
+          <span className="icon">!</span>
+          <div>{error}</div>
+        </div>
+      )}
+      {chain?.termsMatch === false && (
+        <div className="callout warn">
+          <span className="icon">!</span>
+          <div>
+            <strong>The onchain terms do not match this agreement.</strong> Do not fund it.
+          </div>
+        </div>
+      )}
       {chain && chain.divergences.length > 0 && (
-        <p className="notice">
-          Onchain and offchain records differ: {chain.divergences.map((d) => `${d.milestoneId} ${d.offchain} vs ${d.onchain}`).join("; ")}. If a wallet
-          transaction was rejected, retry it below; money always follows the onchain status.
-          {pendingCall && (
-            <button disabled={!!busy} onClick={() => signOnly(pendingCall.label, pendingCall.call)}>
-              Retry {pendingCall.label} onchain
-            </button>
-          )}
-        </p>
+        <div className="callout warn">
+          <span className="icon">↻</span>
+          <div>
+            <strong>The website and the chain disagree.</strong>
+            <span>
+              {chain.divergences.map((d) => `${d.milestoneId}: ${d.offchain.toLowerCase()} here, ${d.onchain.toLowerCase()} onchain`).join("; ")}. Money always follows the
+              chain. If a wallet transaction was cancelled, retry it.
+            </span>
+            {pendingCall && (
+              <div className="actions" style={{ marginTop: 8 }}>
+                <button disabled={!!busy} onClick={() => signOnly(pendingCall.label, pendingCall.call)}>
+                  Retry {pendingCall.label.replace(/_/g, " ")} onchain
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
+      <h2 className="section-title">Milestones</h2>
       {job.state.milestones.map((m, i) => (
         <MilestoneCard
           key={m.id}
@@ -260,19 +329,46 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
         />
       ))}
 
+      <Timeline job={job} me={me} refreshKey={job.version} />
+
       <section className="card">
-        <h3>Your transactions</h3>
-        {txs.length === 0 && <p className="muted">None yet from this browser.</p>}
-        <ul>
-          {txs.map((t) => (
-            <li key={t.hash}>
-              {t.label}:{" "}
-              <a href={explorerTx(net, t.hash)} target="_blank" rel="noreferrer" className="mono">
-                {t.hash}
-              </a>
-            </li>
-          ))}
-        </ul>
+        <div className="card-head">
+          <h3>Onchain record</h3>
+          <span className="spacer" />
+          <button className="secondary" disabled={!!busy} onClick={() => run("sync", () => api("POST", `/v1/jobs/${jobId}/sync`).then(() => undefined))}>
+            Refresh from chain
+          </button>
+        </div>
+        <dl className="kv">
+          <dt>Contract status</dt>
+          <dd>{chain?.error ? <span className="error">chain unavailable: {chain.error}</span> : onchain ? onchain.status : "not onchain yet"}</dd>
+          <dt>Escrow contract</dt>
+          <dd>
+            <a className="mono" href={explorerAccount(net, session.config.escrowContract)} target="_blank" rel="noreferrer">
+              {session.config.escrowContract}
+            </a>
+          </dd>
+          <dt>Terms hash</dt>
+          <dd className="mono">{job.onchainTermsHash}</dd>
+          <dt>Challenge window</dt>
+          <dd>{terms.challengePeriodSec >= 3600 ? `${terms.challengePeriodSec / 3600} h` : `${Math.round(terms.challengePeriodSec / 60)} min`} after a PASS</dd>
+          <dt>{terms.openBounty ? "Claim deadline" : "Funding deadline"}</dt>
+          <dd>{fmtDate(terms.fundingDeadline)}</dd>
+          <dt>Expires</dt>
+          <dd>{fmtDate(terms.expiresAt)}</dd>
+          <dt>Your transactions</dt>
+          <dd>
+            {txs.length === 0 && <span className="muted">None from this browser yet.</span>}
+            {txs.map((t) => (
+              <div key={t.hash}>
+                {t.label.replace(/_/g, " ")}:{" "}
+                <a href={explorerTx(net, t.hash)} target="_blank" rel="noreferrer" className="mono">
+                  {t.hash.slice(0, 10)}…
+                </a>
+              </div>
+            ))}
+          </dd>
+        </dl>
       </section>
     </div>
   );
@@ -309,74 +405,95 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
 
   const fixtureBase = `${window.location.origin}/fixture`;
 
+  const kindDetail = human
+    ? `${m.revisionsUsed} of ${terms.maxRevisions} revisions used`
+    : github
+      ? `a commit merged into ${plan.repo} ${plan.branch} whose checks ${plan.requiredChecks?.join(", ")} succeeded`
+      : plan.repeat
+        ? `${plan.repeat.count} probes ${plan.repeat.intervalMs / 1000} s apart, every one must pass`
+        : "one request to the delivered API; every agreed check must pass";
+
   return (
     <section className="card">
-      <div className="row">
-        <h3>
-          {terms.title} <span className="muted">({terms.id})</span>
-        </h3>
+      <div className="card-head" style={{ marginBottom: 4 }}>
+        <div style={{ minWidth: 0 }}>
+          <h3>{terms.title}</h3>
+          <div className="li-meta" style={{ marginTop: 4 }}>
+            <Badge tone={human ? "violet" : "info"}>{planKind(terms)}</Badge>
+            <MilestoneBadge status={s} />
+            <span className="faint mono">{terms.id}</span>
+          </div>
+        </div>
         <span className="spacer" />
-        <span className="pill">{yoctoToNear(terms.amountYocto)} NEAR</span>
+        <span className="amount">{yoctoToNear(terms.amountYocto)} NEAR</span>
       </div>
-      <dl className="grid">
-        <dt>Type</dt>
-        <dd>
-          <span className={`pill ${human ? "kind-human" : "kind-auto"}`}>{human ? "Human review" : github ? "GitHub CI" : plan.repeat ? "Sustained API check" : "API check"}</span>{" "}
-          {human
-            ? `${m.revisionsUsed}/${terms.maxRevisions} revisions used`
-            : github
-              ? `a commit on ${plan.repo} ${plan.branch} whose checks ${plan.requiredChecks?.join(", ")} succeeded`
-              : plan.repeat
-                ? `${plan.repeat.count} probes ${plan.repeat.intervalMs / 1000} s apart must all pass; an independent verifier signs PASS or FAIL`
-                : "an independent verifier signs PASS or FAIL"}
-        </dd>
+      <Stepper m={m} terms={terms} />
+
+      <dl className="kv" style={{ marginTop: 12 }}>
+        <dt>How it is judged</dt>
+        <dd>{kindDetail}</dd>
+        {human && terms.rubric && (
+          <>
+            <dt>Rubric</dt>
+            <dd>{terms.rubric}</dd>
+          </>
+        )}
         <dt>Status</dt>
         <dd>
-          <strong>{STATUS_TEXT[s] ?? s}</strong>
-          <div className="muted small">
-            offchain {s} · onchain {onchainStatus ?? "—"}
-          </div>
+          {STATUS_TEXT[s] ?? s} <span className="faint small">· onchain {onchainStatus ?? "—"}</span>
         </dd>
         {m.submission && (
           <>
-            <dt>Current submission</dt>
+            <dt>Submission #{m.submission.seq}</dt>
             <dd className="mono">
-              #{m.submission.seq} {m.submission.artifactHash} {m.submission.uri ?? ""}
+              {m.submission.artifactHash}
+              {m.submission.uri && (
+                <>
+                  {" · "}
+                  {/^https?:\/\//.test(m.submission.uri) ? (
+                    <a href={m.submission.uri} target="_blank" rel="noreferrer">
+                      {m.submission.uri}
+                    </a>
+                  ) : (
+                    m.submission.uri
+                  )}
+                </>
+              )}
             </dd>
           </>
         )}
         {m.challengeEndsAt && (
           <>
             <dt>Challenge window ends</dt>
-            <dd>{new Date(m.challengeEndsAt).toLocaleString()}</dd>
+            <dd>{fmtDate(m.challengeEndsAt)}</dd>
           </>
         )}
         {m.settlementProposal && (
           <>
             <dt>Settlement proposal</dt>
             <dd>
-              {yoctoToNear(m.settlementProposal.workerYocto)} NEAR to worker, proposed by {m.settlementProposal.proposer}
+              {yoctoToNear(m.settlementProposal.workerYocto)} NEAR to the worker, proposed by {m.settlementProposal.proposer}
             </dd>
           </>
         )}
         {m.allocation && (
           <>
-            <dt>Allocated</dt>
+            <dt>Split</dt>
             <dd>
-              worker {yoctoToNear(m.allocation.workerYocto)} NEAR · client refund {yoctoToNear(m.allocation.clientYocto)} NEAR
+              {yoctoToNear(m.allocation.workerYocto)} NEAR to the worker · {yoctoToNear(m.allocation.clientYocto)} NEAR back to the client
             </dd>
           </>
         )}
         {human && terms.partialCompensation && (
           <>
-            <dt>Protected floor</dt>
+            <dt>Protected minimum</dt>
             <dd>{yoctoToNear(terms.partialCompensation.floorYocto)} NEAR once a deliverable is submitted</dd>
           </>
         )}
       </dl>
 
       {funded && (
-        <div className="actions">
+        <div className="actions" style={{ marginTop: 14 }}>
           {is("worker") && (s === "PENDING" || s === "REVISION_REQUESTED") && (
             <div className="inline-form">
               <input
@@ -484,6 +601,7 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
       )}
 
       {verifications.length > 0 && (
+        <div className="table-wrap">
         <table>
           <thead>
             <tr>
@@ -496,11 +614,11 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
           <tbody>
             {verifications.map((v) => (
               <tr key={v.id}>
-                <td className="mono">{v.id}</td>
+                <td className="mono">{v.id.slice(0, 12)}…</td>
                 <td>#{v.submissionSeq}</td>
-                <td className={v.outcome === "PASS" ? "ok" : v.outcome ? "bad" : ""}>
-                  {v.outcome ?? v.status}
-                  {v.error ? ` (${v.error})` : ""}
+                <td>
+                  <Badge tone={v.outcome === "PASS" ? "ok" : v.outcome === "FAIL" ? "bad" : v.outcome ? "warn" : "neutral"}>{v.outcome ?? v.status.toLowerCase()}</Badge>
+                  {v.error && <div className="small muted">{v.error}</div>}
                 </td>
                 <td>
                   {v.status === "DONE" && (
@@ -520,6 +638,7 @@ function MilestoneCard({ m, terms, onchainStatus, onchainSubmissionSeq, job, ver
             ))}
           </tbody>
         </table>
+        </div>
       )}
       {evidence !== null && <EvidenceView data={evidence} onClose={() => setEvidence(null)} />}
     </section>

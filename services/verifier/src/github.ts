@@ -66,7 +66,17 @@ export async function runGithubPlan(plan: GithubChecksPlan, commitSha: string, d
     const statusRes = await get(`/repos/${plan.repo}/commits/${sha}/status`);
     if (statusRes.status !== 200) throw new GithubUnavailable(`status answered ${statusRes.status}`);
     result.status = runsRes.status;
-    const runs = ((runsRes.json as { check_runs?: CheckRun[] }).check_runs ?? []).slice().sort((a, b) => b.id - a.id);
+    const page = runsRes.json as { total_count?: number; check_runs?: CheckRun[] };
+    const runs = [...(page.check_runs ?? [])];
+    // Large CI setups report more than one page of check runs: look up missing required checks by name.
+    if ((page.total_count ?? 0) > runs.length) {
+      for (const name of plan.requiredChecks.filter((n) => !runs.some((r) => r.name === n))) {
+        const byName = await get(`/repos/${plan.repo}/commits/${sha}/check-runs?check_name=${encodeURIComponent(name)}&filter=all&per_page=100`);
+        if (byName.status !== 200) throw new GithubUnavailable(`check-runs answered ${byName.status}`);
+        runs.push(...((byName.json as { check_runs?: CheckRun[] }).check_runs ?? []));
+      }
+    }
+    runs.sort((a, b) => b.id - a.id);
     const statuses = (statusRes.json as { statuses?: { context: string; state: string }[] }).statuses ?? [];
 
     let pending = false;

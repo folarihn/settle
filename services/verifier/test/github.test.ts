@@ -12,6 +12,7 @@ let gh: {
   compare: { status: number; body: unknown };
   runs: { status: number; body: unknown };
   statuses: { status: number; body: unknown };
+  byName: { status: number; body: unknown };
   seen: { url: string; auth: string | undefined }[];
 };
 let server: Server;
@@ -25,7 +26,15 @@ beforeAll(async () => {
   server = createServer((req, res) => {
     gh.seen.push({ url: req.url ?? "", auth: req.headers.authorization });
     const url = req.url ?? "";
-    const r = url.includes("/compare/") ? gh.compare : url.includes("/check-runs") ? gh.runs : url.endsWith("/status") ? gh.statuses : { status: 404, body: {} };
+    const r = url.includes("/compare/")
+      ? gh.compare
+      : url.includes("check_name=")
+        ? gh.byName
+        : url.includes("/check-runs")
+          ? gh.runs
+          : url.endsWith("/status")
+            ? gh.statuses
+            : { status: 404, body: {} };
     res.writeHead(r.status, { "content-type": "application/json" }).end(JSON.stringify(r.body));
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -38,6 +47,7 @@ beforeEach(() => {
     compare: ok({ status: "behind" }),
     runs: ok({ check_runs: [run("test", "success", 1), run("lint", "success", 2)] }),
     statuses: ok({ statuses: [] }),
+    byName: ok({ check_runs: [] }),
     seen: [],
   };
 });
@@ -92,6 +102,14 @@ describe("GitHub checks runner", () => {
     expect((await verify()).outcome).toBe("PASS");
     gh.runs = ok({ check_runs: [run("test", "success", 1), run("test", "failure", 3), run("lint", "success", 2)] });
     expect((await verify()).outcome).toBe("FAIL");
+  });
+
+  it("looks up a required check by name when it is not on the first page of check runs", async () => {
+    gh.runs = ok({ total_count: 250, check_runs: [run("lint", "success", 2)] });
+    gh.byName = ok({ check_runs: [run("test", "success", 7)] });
+    expect((await verify()).outcome).toBe("PASS");
+    expect(gh.seen.some((s) => s.url.includes("check_name=test"))).toBe(true);
+    expect(gh.seen.some((s) => s.url.includes("check_name=lint"))).toBe(false);
   });
 
   it("accepts a required check reported as a commit status", async () => {

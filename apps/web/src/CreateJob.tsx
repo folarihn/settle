@@ -1,24 +1,24 @@
 import { useState } from "react";
-import { api, nearToYocto, yoctoToNear, type Job } from "./api";
+import { buildAgreement, swarmCanTake, TEMPLATES, type Template } from "./agreementForm";
+import { api, yoctoToNear, type Job } from "./api";
 import type { Session } from "./App";
+import { describeError } from "./feedback";
 import { wakeSwarm } from "./Swarm";
 import { sendCall } from "./wallet";
-
-type Template = "api-design" | "github" | "sustained";
-
-const TEMPLATES: { id: Template; title: string; blurb: string }[] = [
-  { id: "api-design", title: "API and design", blurb: "An API checked by the independent verifier, then a design you review yourself." },
-  { id: "github", title: "GitHub CI", blurb: "Pays when a commit merged into your branch passes the CI checks you name." },
-  { id: "sustained", title: "Sustained health", blurb: "Pays when the worker's API passes the same check repeatedly, not just once." },
-];
 
 const STEPS = ["Kind of work", "Who", "Terms", "Review and sign"];
 
 /** Client defines the agreement step by step, then signs create_agreement (or post_bounty) in the wallet. */
 export function CreateJob({ session }: { session: Session }) {
+  const fromBounty = window.location.hash.includes("bounty");
   const [step, setStep] = useState(0);
-  const [template, setTemplate] = useState<Template>("api-design");
-  const [openBounty, setOpenBounty] = useState(() => window.location.hash.includes("bounty"));
+  const [template, setTemplate] = useState<Template>(fromBounty ? "review" : "api-design");
+  const [openBounty, setOpenBounty] = useState(fromBounty);
+  const [workTitle, setWorkTitle] = useState("");
+  const [brief, setBrief] = useState("");
+  const [workNear, setWorkNear] = useState("0.02");
+  // Its own minimum: the API-and-design default (0.075) would exceed a small review reward.
+  const [workFloorNear, setWorkFloorNear] = useState("");
   const [worker, setWorker] = useState("");
   const [workerKind, setWorkerKind] = useState<"HUMAN" | "AGENT">("AGENT");
   const [apiNear, setApiNear] = useState("0.35");
@@ -40,61 +40,36 @@ export function CreateJob({ session }: { session: Session }) {
   const [busy, setBusy] = useState(false);
 
   const withDesign = template === "api-design";
-  const requiredChecks = checks.split(",").map((c) => c.trim()).filter(Boolean);
+  const review = template === "review";
 
   /** The agreement as it will be sent; throws a readable message for anything invalid. */
-  const build = () => {
-    const apiYocto = nearToYocto(apiNear);
-    const designYocto = withDesign ? nearToYocto(designNear) : "0";
-    if (BigInt(apiYocto) === 0n || (withDesign && BigInt(designYocto) === 0n)) throw new Error("Every milestone needs an amount above 0.");
-    let first: Record<string, unknown>;
-    if (template === "github") {
-      if (!/^[\w.-]+\/[\w.-]+$/.test(repo.trim())) throw new Error("Enter the repository as owner/name.");
-      if (requiredChecks.length === 0) throw new Error("Name at least one CI check.");
-      first = {
-        id: "ci",
-        title: `CI passes on ${repo.trim()} ${branch.trim()}`,
-        type: "AUTOMATED",
-        amountYocto: apiYocto,
-        verificationPlan: { kind: "GITHUB_CHECKS", version: 1, repo: repo.trim(), branch: branch.trim(), requiredChecks },
-      };
-    } else {
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(plan) as Record<string, unknown>;
-      } catch {
-        throw new Error("The verification plan is not valid JSON.");
-      }
-      first = {
-        id: "api",
-        title: template === "sustained" ? "API stays healthy" : "API passes the agreed checks",
-        type: "AUTOMATED",
-        amountYocto: apiYocto,
-        verificationPlan: template === "sustained" ? { ...parsed, repeat: { count: probes, intervalMs: probeIntervalSec * 1000 } } : parsed,
-      };
-    }
-    const milestones: Record<string, unknown>[] = [first];
-    if (withDesign) {
-      milestones.push({
-        id: "design",
-        title: "Design deliverable",
-        type: "HUMAN_REVIEW",
-        amountYocto: designYocto,
+  const build = () =>
+    buildAgreement(
+      {
+        template,
+        openBounty,
+        worker,
+        workerKind,
+        workTitle,
+        brief,
+        workNear,
+        apiNear,
+        designNear,
+        floorNear: review ? workFloorNear : floorNear,
+        revisions,
+        challengeMin,
+        deadlineHours,
+        expiresDays,
+        plan,
+        probes,
+        probeIntervalSec,
+        repo,
+        branch,
+        checks,
         rubric,
-        maxRevisions: revisions,
-        partialCompensation: floorNear.trim() ? { condition: "DELIVERABLE_SUBMITTED", floorYocto: nearToYocto(floorNear) } : null,
-      });
-    }
-    const now = Date.now();
-    return {
-      ...(openBounty ? { openBounty: true } : { worker: { kind: workerKind, nearAccountId: worker.trim() } }),
-      totalYocto: (BigInt(apiYocto) + BigInt(designYocto)).toString(),
-      milestones,
-      challengePeriodSec: challengeMin * 60,
-      fundingDeadline: now + deadlineHours * 3600_000,
-      expiresAt: now + expiresDays * 24 * 3600_000,
-    };
-  };
+      },
+      Date.now(),
+    );
 
   const canLeave = (i: number): string | null => {
     if (i === 1 && !openBounty && !/^[a-z0-9._-]{2,64}$/.test(worker.trim())) return "Enter the worker's NEAR account, e.g. alice.testnet, or post an open bounty.";
@@ -130,7 +105,7 @@ export function CreateJob({ session }: { session: Session }) {
       sessionStorage.setItem(`settle.tx.${job.id}`, JSON.stringify([{ label: openBounty ? "post_bounty" : "create_agreement", hash }]));
       window.location.hash = `#/jobs/${job.id}`;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
     } finally {
       setBusy(false);
     }
@@ -218,7 +193,58 @@ export function CreateJob({ session }: { session: Session }) {
             </>
           )}
 
-          {step === 2 && (
+          {step === 2 && review && (
+            <>
+              <div className="subhead" style={{ marginTop: 0 }}>
+                The work · you review it
+              </div>
+              <label className="field">
+                <span>What should be delivered</span>
+                <input value={workTitle} onChange={(e) => setWorkTitle(e.target.value)} placeholder="A 300-word quickstart for new users" maxLength={200} autoFocus />
+                <span className="hint">One line. This is the bounty's title.</span>
+              </label>
+              <label className="field">
+                <span>What a good delivery looks like</span>
+                <textarea
+                  rows={5}
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  maxLength={5000}
+                  placeholder="Numbered steps a new user can follow on NEAR testnet: create a wallet, get test NEAR, sign in. Under 300 words. Plain text or Markdown."
+                />
+                <span className="hint">You will judge the delivery against this, and so will the advisory AI review. Be specific about format and length.</span>
+              </label>
+              <div className="fields">
+                <label className="field">
+                  <span>Reward (NEAR)</span>
+                  <input inputMode="decimal" value={workNear} onChange={(e) => setWorkNear(e.target.value)} />
+                  {openBounty && <span className="hint">Swarm agents only take bounties within their owner's limit; 0.05 NEAR or less is a safe test.</span>}
+                </label>
+                <label className="field">
+                  <span>Revisions allowed</span>
+                  <input type="number" min={0} max={10} value={revisions} onChange={(e) => setRevisions(Number(e.target.value))} />
+                </label>
+                <label className="field">
+                  <span>Protected minimum (NEAR)</span>
+                  <input inputMode="decimal" value={workFloorNear} onChange={(e) => setWorkFloorNear(e.target.value)} placeholder="optional" />
+                  <span className="hint">The worker keeps this once something is delivered, even if you reject it. Leave empty for none.</span>
+                </label>
+              </div>
+              <div className="subhead">Time limits</div>
+              <div className="fields">
+                <label className="field">
+                  <span>{openBounty ? "Claim within (hours)" : "Fund within (hours)"}</span>
+                  <input type="number" min={1} max={720} value={deadlineHours} onChange={(e) => setDeadlineHours(Number(e.target.value))} />
+                </label>
+                <label className="field">
+                  <span>Expires after (days)</span>
+                  <input type="number" min={1} max={365} value={expiresDays} onChange={(e) => setExpiresDays(Number(e.target.value))} />
+                </label>
+              </div>
+            </>
+          )}
+
+          {step === 2 && !review && (
             <>
               <div className="subhead" style={{ marginTop: 0 }}>
                 {template === "github" ? "Milestone · GitHub CI checks" : template === "sustained" ? "Milestone · sustained API check" : "Milestone 1 · API check"}
@@ -335,10 +361,17 @@ export function CreateJob({ session }: { session: Session }) {
                   </div>
                 ))}
                 <div className="line">
-                  <span className="k">Challenge window</span>
-                  <span>{challengeMin} min after a PASS</span>
+                  <span className="k">{review ? "Judged by" : "Challenge window"}</span>
+                  <span>{review ? `You: approve, or ask for up to ${revisions} revision${revisions === 1 ? "" : "s"}` : `${challengeMin} min after a PASS`}</span>
                   <span />
                 </div>
+                {swarmCanTake(template, openBounty) && (
+                  <div className="line">
+                    <span className="k">Swarm</span>
+                    <span>Swarm agents can claim this if it fits what they know and their limit.</span>
+                    <span />
+                  </div>
+                )}
                 <div className="line">
                   <span className="k">{openBounty ? "Claims close" : "Fund by"}</span>
                   <span>{new Date(preview.fundingDeadline).toLocaleString()}</span>

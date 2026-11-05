@@ -111,6 +111,8 @@ const humanBounty = (title: string, rubric: string, near: bigint) => ({
 
 describe("Swarm-for-Hire", () => {
   const ai = new FakeAi();
+  /** The bounty the swarm wins; later steps refer to it (the database may hold other suites' jobs). */
+  let wonJob = "";
   const balances = new Map<string, bigint>();
   const transfers: { from: string; to: string; yocto: bigint }[] = [];
   const events: [string, Record<string, unknown>][] = [];
@@ -165,6 +167,7 @@ describe("Swarm-for-Hire", () => {
   it("claims only writing work it accepts, writes it with NEAR AI, and submits a content-addressed deliverable", async () => {
     const poster = await sdk(POSTER);
     const good = (await poster.postBounty(humanBounty("Write a setup guide", "A new user can run the demo.", NEAR / 100n))).job.id;
+    wonJob = good;
     const tooBig = (await poster.postBounty(humanBounty("Write a long manual", "Complete.", NEAR))).job.id;
     const rust = (await poster.postBounty(humanBounty("Explain Rust lifetimes", "Accurate.", NEAR / 100n))).job.id;
 
@@ -193,18 +196,17 @@ describe("Swarm-for-Hire", () => {
     const reviewer = new ReviewWorker(h.db, ai, { warn: () => undefined });
     expect(await reviewer.tick()).toBeGreaterThan(0);
     await reviewer.tick(); // attaches the signature
-    const { rows } = await h.db.query<{ job_id: string; verdict: string; signature_check: string }>("SELECT job_id, verdict, signature_check FROM ai_reviews");
+    const { rows } = await h.db.query<{ verdict: string; signature_check: string }>("SELECT verdict, signature_check FROM ai_reviews WHERE job_id = $1", [wonJob]);
     expect(rows[0]).toMatchObject({ verdict: "meets", signature_check: "verified (provider_tee)" });
     const client = as(h, await login(h, POSTER));
-    const view = (await client.get(`/v1/jobs/${rows[0]!.job_id}/reviews`)).json().reviews[0];
+    const view = (await client.get(`/v1/jobs/${wonJob}/reviews`)).json().reviews[0];
     expect(view).toMatchObject({ verdict: "meets", signatureCheck: "verified (provider_tee)", signature: { kind: "provider_tee", algo: "ecdsa" } });
-    expect((await client.get(`/v1/jobs/${rows[0]!.job_id}`)).json().job.state.milestones[0].status).toBe("SUBMITTED"); // advisory only
+    expect((await client.get(`/v1/jobs/${wonJob}`)).json().job.state.milestones[0].status).toBe("SUBMITTED"); // advisory only
   });
 
   it("revises with the client's feedback when asked", async () => {
     const poster = await sdk(POSTER);
-    const { rows } = await h.db.query<{ job_id: string }>("SELECT job_id FROM ai_reviews LIMIT 1");
-    const id = rows[0]!.job_id;
+    const id = wonJob;
     await poster.act(id, { type: "REQUEST_REVISION", milestoneId: "doc", feedback: "Add a troubleshooting section." });
     await runner.tick();
     const { job } = await poster.getJob(id);

@@ -409,4 +409,3 @@ The second refusal exposed a bug. The decision to take a job saw the agent's ins
 
 **What it does not show:**
 - Several agents competing for the same bounty (one agent was registered).
-- A revision request handled live (it is covered by the tests).

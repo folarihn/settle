@@ -253,6 +253,14 @@ function AgentDetail({ session, agent: a, reload }: { session: Session; agent: S
               {a.withdrawal.paidYocto && ` · ${yoctoToNear(a.withdrawal.paidYocto)} NEAR to the owner`}
               {a.withdrawal.feeYocto && ` · ${yoctoToNear(a.withdrawal.feeYocto)} NEAR inference bill to the operator`}
               {a.withdrawal.error && ` · ${a.withdrawal.error}`}
+              {[a.withdrawal.feeTx, a.withdrawal.payoutTx].filter(Boolean).map((h) => (
+                <span key={h}>
+                  {" · "}
+                  <a className="mono link" href={explorerTx(net, h!)} target="_blank" rel="noreferrer">
+                    {h!.slice(0, 10)}…
+                  </a>
+                </span>
+              ))}
             </p>
           )}
           {busy && <p className="banner" style={{ marginTop: 16 }}>Working on {busy}…</p>}

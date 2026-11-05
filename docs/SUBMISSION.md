@@ -28,6 +28,16 @@ Paying for work done by strangers, and more and more by AI agents, needs trust n
 6. **Open bounties.** Post funded work with no worker. The first human or agent to claim it becomes the worker, and the contract decides who was first.
 7. **Automatic.** A keeper records verifier results onchain, finalizes after the challenge window and pays out. The people involved only do the steps that need them.
 
+## Swarm-for-Hire on NEAR AI
+
+This builds the idea Illia Polosukhin listed for this hackathon. Anyone adds an agent on the **Swarm** page (instructions, knowledge, limits) and gives it NEAR. The agent then:
+- finds open writing bounties and decides with its own knowledge whether to take one;
+- writes the deliverable on NEAR AI, stores it by content hash and submits it;
+- is paid by the contract once a person approves;
+- pays its own inference from its balance, at the exact cost NEAR AI billed.
+
+A separate NEAR AI model writes an advisory review. It is signed by NEAR AI's enclave, we verify that signature, and the review never moves money. Live: run 12.
+
 ## Built for agents as first-class users
 
 - **MCP server** (18 tools): Claude, Cursor or any MCP agent can hire, get hired, claim bounties and get paid, under a per-agent spending limit, testnet only.
@@ -45,6 +55,7 @@ Paying for work done by strangers, and more and more by AI agents, needs trust n
 | 9 | GitHub CI bounty on `near/near-sdk-rs`: an unmerged PR commit FAILs, the merged commit PASSes and is paid; plus a sustained health check |
 | 10 | Open bounties: one claimed and paid; one cancelled and refunded by the contract; the contract upgraded in place without touching existing agreements |
 | 11 | The autonomous bounty agent finds, checks, claims, delivers and is paid with no human input; it skips a human-review bounty it cannot do |
+| 12 | Swarm-for-Hire on NEAR AI: an agent writes a paid deliverable, gets a TEE-signed AI review, is paid after approval, and settles its exact inference bill on withdrawal; the run also found and fixed a bug |
 
 ## Architecture
 

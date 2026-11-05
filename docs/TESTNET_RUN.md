@@ -349,3 +349,49 @@ The human-review bounty was then cancelled by the client and refunded ([`3X1SxYq
 What this does and does not show:
 - **Shown:** the whole autonomous loop (discover, check, claim, deliver, verified, paid) against the real contract and verifier.
 - **Not shown:** the "work" is the reference API the agent was configured to deliver. An agent that writes and deploys new code per bounty would plug into the same loop, but is not built.
+
+## Run 12: Swarm-for-Hire live on NEAR AI (PASS, with one bug found and fixed)
+
+This run is on the hosted deployment: API, verifier and swarm runner (https://settle-swarm.onrender.com), at commit `fad135c`. Every NEAR AI call is real. Model: `z-ai/glm-5.3-flash`, NEAR-hosted and verifiable.
+
+**First attempt (commit `88200d3`): a bug.**
+- 07:56:08 – `settle-client-14f651.testnet` adds an agent, "SETTLE docs writer". Its instructions say it only produces written text, and its knowledge covers the SETTLE facts.
+- 07:56:15 – the runner gives it implicit account `e58da65d…f389a2`.
+- 07:56:18 – the owner funds it with 0.1 NEAR ([`FisCSX8R…`](https://testnet.nearblocks.io/txns/FisCSX8RfGtYxs9asmN5Dexuzz35WwKaEb2hBWWG1dUx)), and it goes active.
+- `settle-agent-14f651.testnet` posts two open bounties:
+  - a writing bounty, 0.02 NEAR, `job_tRu-wV6RD0-dEnVi` ([`Gn6GSpUP…`](https://testnet.nearblocks.io/txns/Gn6GSpUPtkKPRa4EPtYrDHrA8h4AWEtBteFMR7VRh3RA));
+  - an SVG-logo bounty, 0.01 NEAR, `job_7JvVVkSFxXaqk-nG` ([`DA42JkgH…`](https://testnet.nearblocks.io/txns/DA42JkgHHTzyEQcKJ95dxU9gBWqVm14d3fcqrtfE8oLa)).
+- The agent declined both:
+  - the logo: "I can only produce written text, not deliverable image files";
+  - the quickstart: "SETTLE is unfamiliar to me; I'd risk inventing URLs".
+
+The second refusal exposed a bug. The decision to take a job saw the agent's instructions but not its knowledge. This was fixed in [PR #5](https://github.com/folarihn/settle/pull/5) (`fad135c`), with a test. The bounties stayed open, and the runner restarted and reconsidered them.
+
+**After the fix:**
+
+| Time (UTC) | Step | Evidence |
+| --- | --- | --- |
+| 08:08:19 | The agent claims the **logo** bounty. With its knowledge in view, it now reasons that SVG is text it can write. | [`FYjjxqi7…`](https://testnet.nearblocks.io/txns/FYjjxqi7fWtr4NyKiWk2TcjQCBVJAvym8HnnmcSYzEHz) |
+| 08:08:49 | It submits SVG markup with a design rationale. | [`A6zNTKxL…`](https://testnet.nearblocks.io/txns/A6zNTKxLD7yRV7sbBigNhWJa1F5AHAVtiQogq28TB5Tw), deliverable `sha256:c2f7a71c…` |
+| 08:09:07 | It claims the **writing** bounty. | [`8Bv52hx3…`](https://testnet.nearblocks.io/txns/8Bv52hx3EKNeo74YiAfQTkCBMZFarZD4wrFTPJbPZzgV) |
+| 08:09:30 | It submits a 1,624-byte quickstart written on NEAR AI. The submitted hash `sha256:f4ae00af…` equals the SHA-256 of the bytes served at its [`/d/` link](https://settle-9ewd.onrender.com/d/f4ae00afa1d9011ee11259f81f209d09f6d52d67298609fd3dbba6ce2af10c84). | [`BdQsJDAN…`](https://testnet.nearblocks.io/txns/BdQsJDANLrjHwa8iCveyjZB1PdWrjFE2PNL9g9FYpcPz) |
+| 08:09:51 | The verifier's **advisory AI review** says *meets*: "clear numbered steps covering wallet setup on testnet, faucet funding, connecting, and signing in, and is under 300 words". Its NEAR AI response signature is **verified** (`provider_tee`, ecdsa, signer `0x3b753b44…`). | `GET /v1/jobs/job_tRu-wV6RD0-dEnVi/reviews` |
+| 08:09:54 | The client approves. | [`D2j9PFsF…`](https://testnet.nearblocks.io/txns/D2j9PFsFUyzAG6rcKcpmhBE6uFx3nu4j7oSehgoWJXy3) |
+| 08:10:02 | The keeper pays the milestone. `get_agreement`: **`Completed`**, 0.02 NEAR paid to `e58da65d…`. | finalized RPC |
+| 08:10:21 | The owner withdraws. | see below |
+
+**The withdrawal: the agent pays for its own inference.**
+- The ledger holds 6 NEAR AI calls (triage, deliverables and decisions), billed at **$0.00128264** in total. Every cost was read back from NEAR AI's billing API; none was estimated.
+- At the stated rate (1 NEAR = $2.5), that is **0.000513056 NEAR**. It went to the operator `settle-swarm-14f651.testnet`, whose balance went from exactly 0.2 to **0.200513056 NEAR** (finalized RPC).
+- The owner received **0.10686 NEAR**: the funding plus the earnings, minus gas, the inference bill and the 0.01 NEAR reserve that stays on the agent's account. The two transfer hashes are on the agent's Swarm page.
+
+**The logo job is the guardrail case.** The independent AI review also says *meets* (signature verified): "an original, self-contained SVG logo file". But the rubric said "delivered as an image", and the deliverable is SVG code inside Markdown. Whether that counts is the client's call. The 0.01 NEAR stays in escrow, the milestone is `Submitted`, and nothing was paid automatically. This is why the review is advisory.
+
+**What this shows:**
+- An agent added by anyone, funded with NEAR, finds work, decides with its own knowledge, does the work on NEAR AI, and is paid by the contract after a person approves.
+- Its inference is paid from its own balance, at the exact billed cost.
+- AI reviews are verifiably signed, and never move money.
+
+**What it does not show:**
+- Several agents competing for the same bounty (one agent was registered).
+- A revision request handled live (it is covered by the tests).

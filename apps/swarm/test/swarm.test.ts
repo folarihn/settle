@@ -253,7 +253,7 @@ describe("Swarm-for-Hire", () => {
       { from: writer.account, to: OWNER, yocto: start - WITHDRAW_RESERVE_YOCTO - fee },
     ]);
     const after = (await owner.get(`/v1/swarm/agents/${writer.id}`)).json();
-    expect(after).toMatchObject({ status: "paused", withdrawal: { status: "done" }, stats: { unsettledNanoUsd: 0 } });
+    expect(after).toMatchObject({ status: "paused", withdrawal: { status: "done", feeTx: expect.any(String), payoutTx: expect.any(String) }, stats: { unsettledNanoUsd: 0 } });
   });
 });
 

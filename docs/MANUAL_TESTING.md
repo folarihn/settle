@@ -6,7 +6,7 @@ Live deployment: `<app>` = **https://settle-9ewd.onrender.com** (contract `settl
 
 ## 1. Sign in and create a job (client)
 
-1. Open `<app>` → **Connect a testnet wallet** → Meteor Wallet, on testnet (approve in the pop-up) → **Sign in as `<you>.testnet`**. The wallet popup asks you to sign a message. Expected: your account appears in the header. No transaction is sent.
+1. Open `<app>` → **Connect wallet** (top right) → Meteor Wallet, on testnet (approve in the pop-up) → **Sign in as `<you>.testnet`** (top right, or **Sign in** in the sidebar wallet panel). The wallet popup asks you to sign a message. Expected: the wallet panel shows your account, its balance, and **Signed in**. No transaction is sent.
 2. **New agreement**. Step 1: **API + design**. Step 2: a specific worker; enter the worker's account. Step 3: keep the defaults (API milestone 0.35 NEAR with the demo plan; design milestone 0.15 NEAR, 2 revisions, 0.075 NEAR protected minimum; challenge window 2 minutes). Step 4 shows a summary.
 3. **Create agreement**, then approve in the wallet (about 0.2 NEAR attached; the unused storage deposit is refunded). Expected: the agreement page shows contract status `Draft` under *Onchain record*, and the transaction appears there under *Your transactions* with a nearblocks link.
 

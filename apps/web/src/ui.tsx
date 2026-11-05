@@ -161,15 +161,8 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
 export function Mark() {
   return (
     <svg className="mark" viewBox="0 0 24 24" aria-hidden>
-      <defs>
-        <linearGradient id="settle-mark" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="var(--g1)" />
-          <stop offset="0.55" stopColor="var(--g2)" />
-          <stop offset="1" stopColor="var(--g3)" />
-        </linearGradient>
-      </defs>
-      <rect width="24" height="24" rx="6" fill="url(#settle-mark)" />
-      <path d="M7 9.5h6.5a2.5 2.5 0 0 1 0 5H10.5a2.5 2.5 0 0 0 0 5H17" fill="none" stroke="#04130d" strokeWidth="2" strokeLinecap="round" transform="translate(0 -2.5)" />
+      <rect x="0.75" y="0.75" width="22.5" height="22.5" rx="6" fill="var(--signal)" stroke="var(--signal-ink)" strokeWidth="1.5" />
+      <path d="M7 9.5h6.5a2.5 2.5 0 0 1 0 5H10.5a2.5 2.5 0 0 0 0 5H17" fill="none" stroke="var(--signal-ink)" strokeWidth="2.2" strokeLinecap="round" transform="translate(0 -2.5)" />
     </svg>
   );
 }
@@ -195,6 +188,7 @@ const ICONS = {
   back: <path d="M15 6l-6 6 6 6" />,
   external: <path d="M14 5h5v5M19 5l-8 8M18 14v5H5V6h5" />,
   out: <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" />,
+  code: <path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 4l-3 16" />,
 };
 
 export function Icon({ name }: { name: keyof typeof ICONS }) {

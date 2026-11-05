@@ -7,6 +7,7 @@ import { Swarm } from "./Swarm";
 import { JobDetail } from "./JobDetail";
 import { Icon, Mark } from "./ui";
 import { EscrowVisual, LiveRecord } from "./Landing";
+import { ForAgents } from "./ForAgents";
 import { connectedAccount, explorerAccount, initWallet, login, type Wallet } from "./wallet";
 
 export interface Session {
@@ -121,7 +122,8 @@ export function App() {
   const isNew = route.startsWith("#/new");
   const isBounties = route === "#/bounties";
   const swarmMatch = route.match(/^#\/swarm(?:\/([A-Za-z0-9_-]+))?$/);
-  const nav = (href: string, label: string, icon: "overview" | "bounty" | "plus" | "swarm", active: boolean) => (
+  const isAgents = route === "#/agents";
+  const nav = (href: string, label: string, icon: "overview" | "bounty" | "plus" | "swarm" | "code", active: boolean) => (
     <a href={href} className={`nav-item ${active ? "active" : ""}`} aria-current={active ? "page" : undefined} title={label}>
       <Icon name={icon} />
       <span>{label}</span>
@@ -129,14 +131,15 @@ export function App() {
   );
   const links = (
     <>
-      {nav("#/", session ? "Overview" : "Home", "overview", !jobMatch && !isNew && !isBounties && !swarmMatch)}
+      {nav("#/", session ? "Overview" : "Home", "overview", !jobMatch && !isNew && !isBounties && !swarmMatch && !isAgents)}
       {nav("#/bounties", "Bounties", "bounty", isBounties)}
       {nav("#/swarm", "Swarm", "swarm", !!swarmMatch)}
+      {nav("#/agents", "For agents", "code", isAgents)}
       {session && nav("#/new", "New agreement", "plus", isNew)}
     </>
   );
 
-  const publicPage = isBounties || !!swarmMatch || !!jobMatch;
+  const publicPage = isBounties || !!swarmMatch || !!jobMatch || isAgents;
   if (!session && (!publicPage || !visitor)) {
     return (
       <Landing config={config} wallet={wallet} accountId={accountId} signIn={signIn} busy={busy} error={error} preview={preview} />
@@ -202,7 +205,8 @@ export function App() {
           {isBounties && <BountyBoard session={v} />}
           {jobMatch && <JobDetail key={jobMatch[1]} session={v} jobId={jobMatch[1]!} />}
           {swarmMatch && <Swarm key={route} session={v} {...(swarmMatch[1] ? { agentId: swarmMatch[1] } : {})} />}
-          {!jobMatch && !isNew && !isBounties && !swarmMatch && session && <Dashboard me={session.accountId} />}
+          {isAgents && <ForAgents session={v} />}
+          {!jobMatch && !isNew && !isBounties && !swarmMatch && !isAgents && session && <Dashboard me={session.accountId} />}
         </main>
       </div>
     </div>
@@ -231,9 +235,7 @@ function Landing(props: {
         <nav className="landing-nav" aria-label="Explore">
           <a href="#/bounties">Bounties</a>
           <a href="#/swarm">Swarm</a>
-          <a href="https://github.com/folarihn/settle/blob/main/docs/FOR_AGENTS.md" target="_blank" rel="noreferrer">
-            For agents
-          </a>
+          <a href="#/agents">For agents</a>
         </nav>
         <span className="grow" />
         {config && (
@@ -258,7 +260,7 @@ function Landing(props: {
           <h1 className="display">
             Work, verified.
             <br />
-            <em className="grad-text">Then paid.</em>
+            <em className="dot-text">Then paid.</em>
           </h1>
         </div>
         <div>
@@ -268,12 +270,12 @@ function Landing(props: {
           </p>
           <div className="cta">
             {connect && (
-              <button className="btn lg glow" onClick={() => wallet.modal.show()}>
+              <button className="btn lg signal" onClick={() => wallet.modal.show()}>
                 Connect a testnet wallet
               </button>
             )}
             {accountId && (
-              <button className="btn lg glow" onClick={signIn} disabled={busy}>
+              <button className="btn lg signal" onClick={signIn} disabled={busy}>
                 {busy ? "Waiting for wallet…" : `Sign in as ${accountId}`}
               </button>
             )}
@@ -338,7 +340,10 @@ function Landing(props: {
               A TypeScript SDK and signed webhooks. Agents hire agents, or claim open bounties.
             </li>
             <li>
-              Setup: <code>docs/FOR_AGENTS.md</code> in the repository.
+              <a className="link" href="#/agents">
+                How to connect an agent
+              </a>
+              .
             </li>
           </ul>
         </div>

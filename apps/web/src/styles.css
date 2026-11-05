@@ -1405,279 +1405,299 @@ textarea:focus {
 }
 
 /* ============================================================================================
- * Color, depth and motion. A NEAR-green to violet brand gradient used sparingly: the mark, the
- * headline accent, the primary button glow and the live figures. Surfaces get a soft aurora and a
- * faint grid. Motion is short and purposeful, and switched off under prefers-reduced-motion.
+ * "Ledger" look. References: Teenage Engineering and Nothing (one signal color on paper and ink,
+ * monospace figures, a single dot-matrix moment) and Gumroad (hard edges, offset shadows, a bit
+ * of play). Warm paper and ink, one orange for action and money moving. No gradients.
+ * Type: Bricolage Grotesque (headings and UI), Space Mono (figures, ids, hashes), Doto (the one
+ * dot-matrix accent). Motion is short and switched off under prefers-reduced-motion.
  * ========================================================================================== */
 :root {
-  --g1: #00b981;
-  --g2: #1fa8c9;
-  --g3: #7b61ff;
-  --grad: linear-gradient(110deg, var(--g1), var(--g2) 50%, var(--g3));
-  --glow-1: rgba(0, 197, 138, 0.16);
-  --glow-2: rgba(123, 97, 255, 0.13);
-  --card: rgba(255, 255, 255, 0.72);
-  --card-line: rgba(15, 15, 20, 0.08);
-  --shadow: 0 1px 2px rgba(15, 15, 20, 0.04), 0 8px 28px -12px rgba(15, 15, 20, 0.12);
+  --font: "Bricolage Grotesque", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --dot: "Doto", var(--mono);
+
+  --bg: #f2efe7;
+  --side: #ebe7dc;
+  --raised: #fbf9f4;
+  --hover: rgba(24, 22, 18, 0.05);
+  --text: #171612;
+  --text-2: #4f4b42;
+  --text-3: #87826f;
+  --line: #ddd8cb;
+  --line-2: #c9c3b3;
+  --inverse: #171612;
+  --inverse-text: #f2efe7;
+  --signal: #ff4f00;
+  --signal-ink: #171612;
+  --signal-soft: rgba(255, 79, 0, 0.1);
+  --accent: #e04600;
+  --accent-soft: rgba(255, 79, 0, 0.1);
+  --edge: #171612;
+  --shadow-hard: 3px 3px 0 var(--edge);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --s-green: #2f7d3e;
+  --m-paid: #ff4f00;
+  --m-payable: #2f7d3e;
+  --m-locked: #171612;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --g1: #00ec97;
-    --g2: #38c8e8;
-    --g3: #9b87ff;
-    --glow-1: rgba(0, 236, 151, 0.12);
-    --glow-2: rgba(155, 135, 255, 0.14);
-    --card: rgba(22, 22, 26, 0.62);
-    --card-line: rgba(255, 255, 255, 0.07);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 36px -14px rgba(0, 0, 0, 0.6);
-    --accent: #00ec97;
-    --accent-soft: rgba(0, 236, 151, 0.1);
-    --m-paid: #00ec97;
+    --bg: #131210;
+    --side: #181714;
+    --raised: #1d1c18;
+    --hover: rgba(242, 239, 231, 0.05);
+    --text: #f2efe7;
+    --text-2: #b9b3a3;
+    --text-3: #7d7867;
+    --line: #2a2823;
+    --line-2: #3a372f;
+    --inverse: #f2efe7;
+    --inverse-text: #131210;
+    --signal: #ff5a14;
+    --signal-ink: #131210;
+    --signal-soft: rgba(255, 90, 20, 0.12);
+    --accent: #ff6a2b;
+    --accent-soft: rgba(255, 90, 20, 0.12);
+    --edge: #000000;
+    --s-green: #6cc07a;
+    --m-paid: #ff6a2b;
+    --m-payable: #6cc07a;
+    --m-locked: #f2efe7;
   }
 }
 
-/* Aurora behind every page: two soft light sources, fixed so content scrolls over them. */
 body {
-  position: relative;
-  isolation: isolate;
+  font-size: 14.5px;
+  font-variation-settings: "opsz" 14;
 }
-body::before {
-  content: "";
-  position: fixed;
-  inset: -20vh -10vw auto;
-  height: 80vh;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(40% 50% at 18% 20%, var(--glow-1), transparent 70%),
-    radial-gradient(38% 46% at 82% 8%, var(--glow-2), transparent 70%);
-  animation: aurora 18s var(--ease) infinite alternate;
+h1,
+h2,
+h3,
+.display,
+.page-head h1 {
+  font-variation-settings: "opsz" 96;
+  letter-spacing: -0.03em;
 }
-@keyframes aurora {
-  to {
-    transform: translate3d(2vw, 3vh, 0) scale(1.06);
-  }
+.page-head h1 {
+  font-weight: 700;
+  font-size: 34px;
+}
+.label {
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+}
+.num,
+.mono,
+.figure,
+.pay {
+  font-family: var(--mono);
+}
+
+/* Paper texture: a faint dot grid, the dot-matrix motif at rest. */
+body {
+  background-color: var(--bg);
+  background-image: radial-gradient(color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1.2px);
+  background-size: 22px 22px;
 }
 .side {
-  background: color-mix(in srgb, var(--side) 80%, transparent);
-  backdrop-filter: blur(14px);
+  background: var(--side);
 }
 
-.grad-text {
-  background: var(--grad);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: sheen 8s linear infinite;
-}
-@keyframes sheen {
-  to {
-    background-position: -200% 0;
-  }
-}
-
-/* Navigation: an accent bar slides in on the active item. */
+/* Navigation: the active item gets an orange square, like a lit key. */
 .nav-item {
-  position: relative;
-  transition: background 0.18s, color 0.18s;
+  transition: background 0.15s, color 0.15s;
 }
-.side .nav-item.active::before {
-  content: "";
-  position: absolute;
-  left: -12px;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--grad);
-  animation: grow-y 0.35s var(--ease);
+.nav-item.active {
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-2);
 }
 .nav-item.active svg {
-  color: var(--accent);
+  color: var(--signal);
   opacity: 1;
-}
-@keyframes grow-y {
-  from {
-    transform: scaleY(0);
-  }
 }
 
-/* Buttons: primary gets depth and a brand glow; everything lifts slightly on hover. */
+/* Buttons: ink by default, orange for the one main action, hard offset shadow that presses in. */
 .btn {
-  transition: transform 0.18s var(--ease), box-shadow 0.25s var(--ease), opacity 0.15s, background 0.15s;
+  border-radius: 10px;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.15s, opacity 0.15s;
 }
-.btn:not(.ghost):not(.secondary):not(.danger) {
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 6px 18px -8px rgba(0, 0, 0, 0.45);
+.btn:not(.ghost) {
+  border: 1.5px solid var(--edge);
+}
+.btn:not(.ghost):not(:disabled) {
+  box-shadow: var(--shadow-hard);
 }
 .btn:hover:not(:disabled):not(.ghost) {
-  transform: translateY(-1px);
-}
-.btn:not(.ghost):not(.secondary):not(.danger):hover:not(:disabled) {
   opacity: 1;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--g1) 45%, transparent), 0 10px 30px -10px color-mix(in srgb, var(--g1) 70%, transparent);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--edge);
 }
-.btn:active:not(:disabled) {
-  transform: translateY(0) scale(0.98);
+.btn:active:not(:disabled):not(.ghost) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--edge);
 }
-.btn.glow {
-  background: var(--grad);
-  color: #04130d;
-  font-weight: 600;
+.btn.secondary {
+  background: var(--raised);
+  border-color: var(--edge);
+}
+.btn.danger {
+  border-color: var(--s-red);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--s-red) 60%, transparent);
+}
+.btn.signal {
+  background: var(--signal);
+  color: var(--signal-ink);
+  font-weight: 700;
 }
 .btn.sm-btn {
   height: 28px;
   padding: 0 11px;
   font-size: 12.5px;
+  box-shadow: 2px 2px 0 var(--edge);
+}
+@media (prefers-color-scheme: dark) {
+  .btn:not(.ghost):not(.signal):not(.danger) {
+    border-color: var(--line-2);
+  }
 }
 
-/* Live dot: a ring that ripples outward. */
+/* Live dot: blinks like an LED. */
 .netline .pulse {
-  position: relative;
-  background: var(--g1);
-  box-shadow: none;
+  background: var(--signal);
+  box-shadow: 0 0 0 3px var(--signal-soft);
+  animation: led 1.6s steps(1) infinite;
 }
-.netline .pulse::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: var(--g1);
-  animation: ping 2.2s var(--ease) infinite;
-}
-@keyframes ping {
-  from {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  to {
-    transform: scale(3.2);
-    opacity: 0;
+@keyframes led {
+  50% {
+    opacity: 0.35;
   }
 }
 
-/* Figures sit on soft glass cards with a gradient hairline on top. */
+/* Figures sit on paper cards with a crisp ink edge. */
 .metrics {
   gap: 12px;
 }
 .metrics .metric,
 .metrics .metric:first-child,
 .record .metric {
-  position: relative;
-  border: 1px solid var(--card-line);
+  border: 1.5px solid var(--edge);
   border-radius: 12px;
-  background: var(--card);
-  box-shadow: var(--shadow);
+  background: var(--raised);
+  box-shadow: var(--shadow-hard);
   padding: 16px 18px;
-  overflow: hidden;
 }
-.metrics .metric::before,
-.record .metric::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 1px;
-  background: var(--grad);
-  opacity: 0.6;
+@media (prefers-color-scheme: dark) {
+  .metrics .metric,
+  .metrics .metric:first-child,
+  .record .metric {
+    border-color: var(--line-2);
+  }
+}
+.metric .figure {
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+.record a.metric {
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.record a.metric:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0 var(--signal);
 }
 
-/* Rows: a gradient edge slides in on hover. */
+/* Rows: an orange tick slides in on hover. */
 .bounty-row,
 .trow {
   position: relative;
-  transition: background 0.2s, transform 0.25s var(--ease);
+  transition: background 0.15s, transform 0.2s var(--ease);
 }
 .bounty-row::before,
 .trow::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 12px;
-  bottom: 12px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--grad);
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  background: var(--signal);
   transform: scaleY(0);
-  transition: transform 0.25s var(--ease);
+  transition: transform 0.2s var(--ease);
 }
 .bounty-row:hover::before,
 .trow:hover::before {
   transform: scaleY(1);
 }
 a.bounty-row:hover {
-  transform: translateX(3px);
+  transform: translateX(4px);
 }
 .bounty-row .pay {
-  font-weight: 500;
+  font-weight: 700;
 }
 
 /* Entrances. */
 .page > *,
 .reveal {
-  animation: rise 0.55s var(--ease) both;
+  animation: rise 0.45s var(--ease) both;
 }
 .page > :nth-child(2) {
-  animation-delay: 60ms;
-}
-.page > :nth-child(3) {
-  animation-delay: 120ms;
-}
-.page > :nth-child(n + 4) {
-  animation-delay: 180ms;
-}
-.stagger > * {
-  animation: rise 0.5s var(--ease) both;
-}
-.stagger > :nth-child(2) {
   animation-delay: 50ms;
 }
-.stagger > :nth-child(3) {
+.page > :nth-child(3) {
   animation-delay: 100ms;
 }
-.stagger > :nth-child(4) {
+.page > :nth-child(n + 4) {
   animation-delay: 150ms;
 }
-.stagger > :nth-child(5) {
-  animation-delay: 200ms;
+.stagger > * {
+  animation: rise 0.4s var(--ease) both;
 }
-.stagger > :nth-child(n + 6) {
-  animation-delay: 250ms;
+.stagger > :nth-child(2) {
+  animation-delay: 40ms;
+}
+.stagger > :nth-child(3) {
+  animation-delay: 80ms;
+}
+.stagger > :nth-child(4) {
+  animation-delay: 120ms;
+}
+.stagger > :nth-child(n + 5) {
+  animation-delay: 160ms;
 }
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
 }
 
-/* Loading placeholders shimmer instead of saying "Loading…". */
 .skeleton {
   height: 64px;
   border-radius: 10px;
   margin-bottom: 10px;
-  background: linear-gradient(90deg, var(--hover) 25%, color-mix(in srgb, var(--g1) 9%, var(--hover)) 50%, var(--hover) 75%);
+  background: linear-gradient(90deg, var(--hover) 25%, var(--signal-soft) 50%, var(--hover) 75%);
   background-size: 300% 100%;
-  animation: shimmer 1.6s linear infinite;
+  animation: shimmer 1.4s linear infinite;
 }
 @keyframes shimmer {
   to {
     background-position: -300% 0;
   }
 }
-
 .who.guest {
   gap: 10px;
 }
 
-/* ---- landing, with color ------------------------------------------------------------- */
+/* ---- landing ------------------------------------------------------------------------- */
+.landing {
+  overflow-x: clip;
+}
 .landing-top {
   position: sticky;
   top: 0;
   z-index: 5;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  backdrop-filter: blur(14px);
-  border-bottom-color: var(--card-line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
 }
 .landing-nav {
   display: flex;
@@ -1686,70 +1706,90 @@ a.bounty-row:hover {
 }
 .landing-nav a {
   padding: 6px 10px;
-  border-radius: 7px;
+  border-radius: 8px;
   color: var(--text-2);
   text-decoration: none;
   font-weight: 500;
-  transition: color 0.15s, background 0.15s;
 }
 .landing-nav a:hover {
   color: var(--text);
   background: var(--hover);
 }
-.landing {
-  overflow-x: clip;
-}
-.hero {
-  position: relative;
-  isolation: isolate;
-}
-.hero::before {
-  content: "";
-  position: absolute;
-  inset: 0 -48px;
-  z-index: -1;
-  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(70% 70% at 30% 40%, #000 30%, transparent 75%);
-  -webkit-mask-image: radial-gradient(70% 70% at 30% 40%, #000 30%, transparent 75%);
-  opacity: 0.75;
-}
 .hero > * {
-  animation: rise 0.8s var(--ease) both;
+  animation: rise 0.6s var(--ease) both;
 }
 .hero > :nth-child(2) {
-  animation-delay: 120ms;
+  animation-delay: 100ms;
 }
-.display em.grad-text {
-  color: transparent;
+.display {
+  font-weight: 800;
+  font-variation-settings: "opsz" 96, "wdth" 82;
+  font-size: clamp(46px, 7.4vw, 92px);
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+}
+/* The one expressive moment: "Then paid." in dot matrix, lighting up dot by dot. */
+.display .dot-text {
+  display: inline-block;
+  font-family: var(--dot);
+  font-style: normal;
+  font-weight: 900;
+  color: var(--signal);
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+  animation: matrix 1.3s steps(6) 0.35s both;
+}
+@keyframes matrix {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
 }
 .eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 5px 12px 5px 10px;
-  border: 1px solid var(--card-line);
+  border: 1.5px solid var(--edge);
   border-radius: 999px;
-  background: var(--card);
-  color: var(--text-2);
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+@media (prefers-color-scheme: dark) {
+  .eyebrow {
+    border-color: var(--line-2);
+  }
 }
 .eyebrow i {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--g1);
-  box-shadow: 0 0 10px var(--g1);
+  background: var(--signal);
+  animation: led 1.6s steps(1) infinite;
+}
+.lede {
+  font-size: 18px;
+  color: var(--text-2);
 }
 
-/* The escrow diagram: money travels client -> contract -> worker once checks pass. */
+/* The escrow diagram, drawn like a device panel. */
 .escrow-vis {
-  margin: 8px 0 28px;
-  border: 1px solid var(--card-line);
+  margin: 8px 0 14px;
+  border: 1.5px solid var(--edge);
   border-radius: 18px;
-  background: var(--card);
-  box-shadow: var(--shadow);
+  background: var(--raised);
+  box-shadow: 5px 5px 0 var(--edge);
   padding: 6px 6px 2px;
-  animation: rise 0.9s var(--ease) 0.25s both;
+  animation: rise 0.7s var(--ease) 0.2s both;
+}
+@media (prefers-color-scheme: dark) {
+  .escrow-vis {
+    border-color: var(--line-2);
+  }
 }
 .escrow-vis svg {
   display: block;
@@ -1757,68 +1797,72 @@ a.bounty-row:hover {
   height: auto;
 }
 .escrow-vis .node {
-  fill: var(--raised);
-  stroke: var(--line-2);
-}
-.escrow-vis .node.core {
-  stroke: var(--g1);
+  fill: var(--bg);
+  stroke: var(--text);
   stroke-width: 1.5;
 }
-.escrow-vis .halo {
-  fill: var(--g1);
-  opacity: 0.12;
-  transform-origin: 360px 100px;
-  animation: breathe 3s ease-in-out infinite;
+.escrow-vis .node.core {
+  fill: var(--signal);
+  stroke: var(--text);
 }
-@keyframes breathe {
-  50% {
-    opacity: 0.22;
-    transform: scale(1.08);
+.escrow-vis .halo {
+  fill: none;
+  stroke: var(--signal);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 5;
+  transform-origin: 360px 100px;
+  animation: spin 14s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 .escrow-vis .lbl {
   fill: var(--text);
-  font: 600 14px var(--font);
+  font: 700 15px var(--font);
 }
 .escrow-vis .sub {
   fill: var(--text-3);
-  font: 12px var(--font);
+  font: 11px var(--mono);
 }
 .escrow-vis .wire {
-  stroke: var(--line-2);
+  stroke: var(--text-3);
   stroke-width: 1.5;
-  stroke-dasharray: 4 6;
-  animation: dash 1.2s linear infinite;
+  stroke-dasharray: 3 6;
+  animation: dash 1s linear infinite;
   fill: none;
 }
 @keyframes dash {
   to {
-    stroke-dashoffset: -20;
+    stroke-dashoffset: -18;
   }
 }
 .escrow-vis .coin {
-  fill: var(--g1);
-  filter: drop-shadow(0 0 6px var(--g1));
+  fill: var(--signal);
+  stroke: var(--text);
+  stroke-width: 1.5;
 }
 .escrow-vis .ok {
-  fill: var(--g1);
+  fill: var(--text);
 }
 .escrow-vis .ok-text {
-  fill: #04130d;
-  font: 700 11px var(--font);
+  fill: var(--bg);
+  font: 700 11px var(--mono);
 }
 .escrow-vis .icon {
-  stroke: var(--text-2);
+  stroke: var(--text);
   fill: none;
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .escrow-vis .core-icon {
-  stroke: var(--accent);
+  stroke: var(--signal-ink);
 }
 .vis-caption {
-  font-size: 12.5px;
+  font-size: 12px;
+  font-family: var(--mono);
   color: var(--text-3);
   margin: 0 0 72px;
 }
@@ -1827,37 +1871,57 @@ a.bounty-row:hover {
 .record {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
   margin-bottom: 72px;
 }
+.record .metric {
+  text-decoration: none;
+  color: inherit;
+}
 .record .metric .figure {
-  font-size: 30px;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 38px;
+  line-height: 1.15;
+  letter-spacing: -0.05em;
+}
+.record .metric .figure .unit {
+  font-family: var(--mono);
+  font-weight: 400;
 }
 .record-head {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  margin-bottom: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
 }
 .record-head h2 {
-  font-size: 18px;
+  font-size: 22px;
+  font-weight: 700;
 }
 
 .flow {
   border-top: 0;
-  gap: 12px;
+  gap: 14px;
 }
 .flow-step {
   padding: 22px;
-  border: 1px solid var(--card-line);
+  border: 1.5px solid var(--edge);
   border-radius: 14px;
-  background: var(--card);
-  box-shadow: var(--shadow);
-  transition: transform 0.3s var(--ease), border-color 0.3s;
+  background: var(--raised);
+  box-shadow: var(--shadow-hard);
+  transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+@media (prefers-color-scheme: dark) {
+  .flow-step,
+  .pitch {
+    border-color: var(--line-2) !important;
+  }
 }
 .flow-step:hover {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--g1) 45%, transparent);
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0 var(--signal);
 }
 .flow-step::before {
   display: none;
@@ -1865,19 +1929,27 @@ a.bounty-row:hover {
 .flow-step .n {
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 500;
+  background: var(--signal);
+  color: var(--signal-ink);
+  font-weight: 700;
+}
+.flow-step h3 {
+  font-size: 18px;
+  font-weight: 700;
 }
 .pitch {
   padding: 26px 26px 14px;
-  border: 1px solid var(--card-line);
+  border: 1.5px solid var(--edge);
   border-radius: 16px;
-  background: var(--card);
-  box-shadow: var(--shadow);
+  background: var(--raised);
+  box-shadow: var(--shadow-hard);
+}
+.pitch h2 {
+  font-size: 26px;
+  font-weight: 700;
 }
 .pitch .label {
   color: var(--accent);
@@ -1897,23 +1969,164 @@ a.bounty-row:hover {
   .metrics .metric:nth-child(odd),
   .metrics .metric:nth-child(n + 3) {
     padding: 14px;
-    border: 1px solid var(--card-line);
+    border: 1.5px solid var(--edge);
   }
   .flow {
-    gap: 10px;
+    gap: 12px;
   }
   .flow-step {
-    border-top: 1px solid var(--card-line);
     padding: 18px;
   }
-  .record {
-    margin-bottom: 48px;
-  }
+  .record,
   .vis-caption {
     margin-bottom: 48px;
   }
   .record .metric .figure {
-    font-size: 24px;
+    font-size: 32px;
+  }
+  .page-head h1 {
+    font-size: 28px;
+  }
+}
+
+/* ---- for agents / swarm how-to -------------------------------------------------------- */
+.ways {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.way {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  border: 1.5px solid var(--edge);
+  border-radius: 14px;
+  background: var(--raised);
+  box-shadow: var(--shadow-hard);
+  text-decoration: none;
+  color: inherit;
+}
+a.way {
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+a.way:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0 var(--signal);
+}
+.way h3 {
+  font-size: 18px;
+  font-weight: 700;
+}
+.way p {
+  color: var(--text-2);
+  font-size: 13.5px;
+  flex: 1;
+}
+.way-n {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--signal);
+  color: var(--signal-ink);
+  font: 700 13px var(--mono);
+}
+.way-go {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+a.way .way-go {
+  color: var(--accent);
+}
+.steps-list {
+  list-style: decimal;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  color: var(--text-2);
+  margin-bottom: 14px;
+}
+.steps-list code,
+.tool code,
+.section code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+}
+pre.code {
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--inverse);
+  color: var(--inverse-text);
+  font: 12.5px/1.7 var(--mono);
+  overflow-x: auto;
+  white-space: pre;
+}
+.tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+}
+.tool {
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.tool code {
+  color: var(--accent);
+}
+.howto {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  counter-reset: how;
+}
+.howto li {
+  counter-increment: how;
+  position: relative;
+  padding: 44px 16px 16px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--raised);
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.howto li::before {
+  content: counter(how, decimal-leading-zero);
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  font: 700 12px var(--mono);
+  color: var(--signal);
+}
+.howto b {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  .way {
+    border-color: var(--line-2);
+  }
+}
+@media (max-width: 1000px) {
+  .ways,
+  .howto {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .ways,
+  .howto,
+  .tools {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

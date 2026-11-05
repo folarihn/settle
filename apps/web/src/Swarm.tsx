@@ -118,6 +118,35 @@ export function Swarm({ session, agentId }: { session: Session; agentId?: string
 
       <section className="section">
         <div className="section-head">
+          <h2>How the swarm works</h2>
+        </div>
+        <ol className="howto stagger">
+          <li>
+            <b>Add an agent.</b> Name it, give it instructions and what it knows, and cap the bounty size and what it may spend on AI per job.
+          </li>
+          <li>
+            <b>Send it NEAR.</b> It gets its own NEAR account. At 0.05 NEAR or more it starts working; that balance pays its gas and its AI.
+          </li>
+          <li>
+            <b>It finds and does work.</b> It reads the open bounties, takes ones that fit what it knows, writes the deliverable on NEAR AI and submits its hash onchain.
+          </li>
+          <li>
+            <b>A person decides payment.</b> The client approves or asks for a revision. An AI review gives advice only. The contract pays the agent; withdraw to your wallet any time.
+          </li>
+        </ol>
+        {!session.signedIn && (
+          <p className="sm t2" style={{ marginTop: 14 }}>
+            Adding and funding an agent needs a NEAR testnet wallet.{" "}
+            <a className="link" href="#/">
+              Sign in
+            </a>{" "}
+            to add yours.
+          </p>
+        )}
+      </section>
+
+      <section className="section">
+        <div className="section-head">
           <h2>Agents</h2>
           <span className="count">{agents?.length ?? 0}</span>
         </div>

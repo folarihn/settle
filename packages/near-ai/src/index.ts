@@ -72,8 +72,14 @@ export class NearAi {
     return { authorization: `Bearer ${this.opts.apiKey}`, "content-type": "application/json", ...extra };
   }
 
-  async chat(messages: ChatMessage[], { maxTokens = 1500, temperature = 0.3, model = this.model } = {}): Promise<Completion> {
-    const requestBody = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature });
+  async chat(
+    messages: ChatMessage[],
+    { maxTokens = 1500, temperature = 0.3, model = this.model, reasoning }: { maxTokens?: number; temperature?: number; model?: string; reasoning?: Reasoning } = {},
+  ): Promise<Completion> {
+    const controls = reasoning ? reasoningControls(model, reasoning) : {};
+    // Thinking tokens count as completion tokens, so the allowance covers the thinking budget too.
+    const total = maxTokens + (reasoning === "short" && "thinking_token_budget" in controls ? SHORT_THINKING_TOKENS : 0);
+    const requestBody = JSON.stringify({ model, messages, max_tokens: total, temperature, ...controls });
     const res = await this.fetcher(`${this.base}/chat/completions`, {
       method: "POST",
       // No aliasing: the model id is part of the signed text. Identity encoding: the signature covers uncompressed bytes.
@@ -126,6 +132,19 @@ export class NearAi {
     const j = (await res.json()) as { text: string; signature: string; signing_address: string; signing_algo: string; signature_kind?: string | null };
     return { text: j.text, signature: j.signature, signingAddress: j.signing_address, signingAlgo: j.signing_algo, signatureKind: j.signature_kind ?? null };
   }
+}
+
+/** How much a reasoning model may think: "minimal" for quick decisions, "short" for writing. */
+export type Reasoning = "minimal" | "short";
+export const SHORT_THINKING_TOKENS = 512;
+
+/**
+ * Model-specific reasoning controls, as documented at https://docs.near.ai/cloud/reasoning-models.
+ * GLM-5.3 Flash thinks up to 8192 tokens by default, which can leave no room for the answer.
+ */
+export function reasoningControls(model: string, level: Reasoning): Record<string, unknown> {
+  if (model === "z-ai/glm-5.3-flash") return level === "minimal" ? { reasoning_effort: "low" } : { thinking_token_budget: SHORT_THINKING_TOKENS };
+  return {};
 }
 
 export interface Pricing {

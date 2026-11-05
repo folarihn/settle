@@ -97,7 +97,7 @@ export class ReviewWorker {
         },
         { role: "user", content: `Task: ${title}\n\nRubric:\n${rubric}\n\nDeliverable:\n${d.content.slice(0, 30_000)}` },
       ],
-      { maxTokens: 700, temperature: 0 },
+      { maxTokens: 700, temperature: 0, reasoning: "minimal" },
     );
     await recordInference(this.db, c, "review", { jobId, milestoneId }, at);
     const parsed = parseReview(c.content);

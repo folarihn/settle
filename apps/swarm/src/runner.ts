@@ -1,6 +1,6 @@
 import type { JobView, SettleAgent } from "@settle/agent-sdk";
 import { backfillCosts, recordInference, type Db } from "@settle/api";
-import { worstCaseNanoUsd, type ChatMessage, type NearAi, type Pricing } from "@settle/near-ai";
+import { SHORT_THINKING_TOKENS, worstCaseNanoUsd, type ChatMessage, type NearAi, type Pricing } from "@settle/near-ai";
 import type { KeyPairString } from "near-api-js";
 import { decryptSecret, encryptSecret, newAgentKey } from "./keys.js";
 
@@ -177,8 +177,9 @@ export class SwarmRunner {
       { role: "system", content: `${a.prompt}\n\nYou decide whether to take a paid writing job. Answer JSON only: {"take": true|false, "reason": "short"}.` },
       { role: "user", content: `Job brief:\n${brief}\n\nCan you deliver this well as written text, given your skills and knowledge?` },
     ];
-    if (worstCaseNanoUsd(this.d.pricing, chars(messages), TRIAGE_TOKENS) > Number(a.max_job_nano_usd)) return "even deciding would exceed the agent's inference limit";
-    const c = await this.d.ai.chat(messages, { maxTokens: TRIAGE_TOKENS, temperature: 0 });
+    // "minimal" reasoning adds a few dozen thinking tokens at most; budget generously for them.
+    if (worstCaseNanoUsd(this.d.pricing, chars(messages), TRIAGE_TOKENS + 64) > Number(a.max_job_nano_usd)) return "even deciding would exceed the agent's inference limit";
+    const c = await this.d.ai.chat(messages, { maxTokens: TRIAGE_TOKENS, temperature: 0, reasoning: "minimal" });
     await recordInference(this.d.db, c, "triage", { agentId: a.id, jobId: b.id }, this.now());
     const m = c.content.match(/\{[\s\S]*\}/);
     try {
@@ -215,12 +216,12 @@ export class SwarmRunner {
 
     // Guardrail: never start a call that could push this job past the agent's inference limit.
     const spent = await this.jobSpend(a.id, job.id);
-    const worst = worstCaseNanoUsd(this.d.pricing, chars(messages), DELIVERABLE_TOKENS);
+    const worst = worstCaseNanoUsd(this.d.pricing, chars(messages), DELIVERABLE_TOKENS + SHORT_THINKING_TOKENS);
     if (spent + worst > Number(a.max_job_nano_usd)) {
       this.d.log("held: inference limit", { agent: a.name, bounty: job.id, spentNanoUsd: spent, nextWorstNanoUsd: worst, limit: Number(a.max_job_nano_usd) });
       return;
     }
-    const c = await this.d.ai.chat(messages, { maxTokens: DELIVERABLE_TOKENS, temperature: 0.4 });
+    const c = await this.d.ai.chat(messages, { maxTokens: DELIVERABLE_TOKENS, temperature: 0.4, reasoning: "short" });
     await recordInference(this.d.db, c, "deliverable", { agentId: a.id, jobId: job.id, milestoneId }, this.now());
     if (!c.content) {
       this.d.log("empty answer; will retry", { agent: a.name, bounty: job.id });

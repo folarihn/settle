@@ -71,6 +71,21 @@ describe("NEAR AI client", () => {
     expect(await ai.signature("chatcmpl-abc")).toBeNull();
   });
 
+  it("bounds a reasoning model's thinking so the answer is never crowded out", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fake = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ id: "x", choices: [{ message: { content: "ok" } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const ai = new NearAi({ apiKey: "sk-test", fetch: fake, model: "z-ai/glm-5.3-flash" });
+    await ai.chat([{ role: "user", content: "a" }], { maxTokens: 100, reasoning: "minimal" });
+    await ai.chat([{ role: "user", content: "b" }], { maxTokens: 100, reasoning: "short" });
+    await ai.chat([{ role: "user", content: "c" }], { maxTokens: 100, reasoning: "short", model: "some/other-model" });
+    expect(bodies[0]).toMatchObject({ max_tokens: 100, reasoning_effort: "low" });
+    expect(bodies[1]).toMatchObject({ max_tokens: 612, thinking_token_budget: 512 }); // answer allowance kept on top of the thinking budget
+    expect(bodies[2]).toEqual({ model: "some/other-model", messages: [{ role: "user", content: "c" }], max_tokens: 100, temperature: 0.3 }); // unknown model: no guessed parameters
+  });
+
   it("derives UUIDv5 ids exactly (RFC 4122 test vector)", () => {
     expect(uuidV5Dns("www.example.com")).toBe("2ed6657d-e927-568b-95e1-2665a8aea6a2");
   });

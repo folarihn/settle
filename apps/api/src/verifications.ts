@@ -81,25 +81,25 @@ export class VerificationService {
     return this.get(p, id);
   }
 
-  async get(p: Principal, id: string) {
+  async get(p: Principal | null, id: string) {
     const row = await this.row(id);
     const state = await this.jobs.load(this.db, row.job_id);
-    this.jobs.requireParticipant(state, p.accountId);
+    this.jobs.requireReadable(state, p);
     // Clients poll while a run is queued; keep nudging a worker that may have gone to sleep.
     if (row.status === "QUEUED") this.wake?.();
     return this.toView(row, state);
   }
 
-  async evidence(p: Principal, id: string) {
+  async evidence(p: Principal | null, id: string) {
     const row = await this.row(id);
-    this.jobs.requireParticipant(await this.jobs.load(this.db, row.job_id), p.accountId);
+    this.jobs.requireReadable(await this.jobs.load(this.db, row.job_id), p);
     if (!row.evidence || !row.report) throw new ApiError(409, "NOT_READY", `verification is ${row.status}`);
     return { evidence: row.evidence, report: row.report, matchesReport: evidenceMatchesReport(row.evidence, row.report) };
   }
 
-  async listForJob(p: Principal, jobId: string) {
+  async listForJob(p: Principal | null, jobId: string) {
     const state = await this.jobs.load(this.db, jobId);
-    this.jobs.requireParticipant(state, p.accountId);
+    this.jobs.requireReadable(state, p);
     const { rows } = await this.db.query<Row>("SELECT * FROM verifications WHERE job_id = $1 ORDER BY created_at DESC", [jobId]);
     return rows.map((r) => this.toView(r, state));
   }

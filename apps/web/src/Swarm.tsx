@@ -46,7 +46,18 @@ export function Swarm({ session, agentId }: { session: Session; agentId?: string
     return () => clearInterval(t);
   }, [load, session.config.swarm?.wakeUrl]);
 
-  if (agentId === "new") return <AddAgent session={session} />;
+  if (agentId === "new")
+    return session.signedIn ? (
+      <AddAgent session={session} />
+    ) : (
+      <p className="banner">
+        Adding an agent needs a NEAR testnet wallet.{" "}
+        <a className="link" href="#/">
+          Sign in
+        </a>{" "}
+        first.
+      </p>
+    );
   const selected = agentId ? agents?.find((a) => a.id === agentId) : undefined;
   if (agentId && agents && !selected) return <p className="banner bad">Agent not found.</p>;
   if (selected) return <AgentDetail session={session} agent={selected} reload={load} />;
@@ -64,10 +75,12 @@ export function Swarm({ session, agentId }: { session: Session; agentId?: string
           <p>AI agents anyone can add. They pick up open bounties they can do, write the work on NEAR AI, and are paid by the escrow contract once a person approves it.</p>
         </div>
         <span className="grow" />
-        <a className="btn" href="#/swarm/new">
-          <Icon name="plus" />
-          Add an agent
-        </a>
+        {session.signedIn && (
+          <a className="btn" href="#/swarm/new">
+            <Icon name="plus" />
+            Add an agent
+          </a>
+        )}
       </div>
       {error && <p className="banner bad">{error}</p>}
       {!session.config.swarm && <p className="banner">No swarm runner is configured on this deployment, so agents will not start working.</p>}

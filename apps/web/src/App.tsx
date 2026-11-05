@@ -6,12 +6,23 @@ import { Dashboard } from "./Dashboard";
 import { Swarm } from "./Swarm";
 import { JobDetail } from "./JobDetail";
 import { Icon, Mark } from "./ui";
+import { EscrowVisual, LiveRecord } from "./Landing";
 import { connectedAccount, explorerAccount, initWallet, login, type Wallet } from "./wallet";
 
 export interface Session {
   config: PublicConfig;
   wallet: Wallet;
+  /** Empty when signed out: a public visitor, who has no role in anything. */
   accountId: string;
+  signedIn: boolean;
+}
+
+/** Signed-out visitors browse public pages (ADR 0007); anything that would sign refuses with a clear message. */
+function signedOutWallet(real: Wallet | null): Wallet {
+  const refuse = async () => {
+    throw new Error("Sign in with a NEAR testnet wallet first: use Sign in at the bottom of the sidebar.");
+  };
+  return { ...(real ?? {}), selector: { ...(real?.selector ?? {}), wallet: refuse } } as unknown as Wallet;
 }
 
 function useHashRoute(): string {
@@ -104,7 +115,8 @@ export function App() {
     if (wallet && !preview) await (await wallet.selector.wallet()).signOut().catch(() => undefined);
   };
 
-  const session: Session | null = config && wallet && accountId && signedIn ? { config, wallet, accountId } : null;
+  const session: Session | null = config && wallet && accountId && signedIn ? { config, wallet, accountId, signedIn: true } : null;
+  const visitor: Session | null = session ?? (config ? { config, wallet: signedOutWallet(wallet), accountId: "", signedIn: false } : null);
   const jobMatch = route.match(/^#\/jobs\/([A-Za-z0-9_-]+)$/);
   const isNew = route.startsWith("#/new");
   const isBounties = route === "#/bounties";
@@ -117,18 +129,25 @@ export function App() {
   );
   const links = (
     <>
-      {nav("#/", "Overview", "overview", !jobMatch && !isNew && !isBounties && !swarmMatch)}
+      {nav("#/", session ? "Overview" : "Home", "overview", !jobMatch && !isNew && !isBounties && !swarmMatch)}
       {nav("#/bounties", "Bounties", "bounty", isBounties)}
       {nav("#/swarm", "Swarm", "swarm", !!swarmMatch)}
-      {nav("#/new", "New agreement", "plus", isNew)}
+      {session && nav("#/new", "New agreement", "plus", isNew)}
     </>
   );
 
-  if (!session) {
+  const publicPage = isBounties || !!swarmMatch || !!jobMatch;
+  if (!session && (!publicPage || !visitor)) {
     return (
       <Landing config={config} wallet={wallet} accountId={accountId} signIn={signIn} busy={busy} error={error} preview={preview} />
     );
   }
+  const v = visitor!;
+  const signInLink = (
+    <a className="btn sm-btn" href="#/" title="Sign in with a NEAR testnet wallet">
+      Sign in
+    </a>
+  );
 
   return (
     <div className="app">
@@ -139,19 +158,26 @@ export function App() {
         </a>
         {links}
         <div className="side-foot">
-          <a className="netline" href={explorerAccount(session.config.network, session.config.escrowContract)} target="_blank" rel="noreferrer" title={session.config.escrowContract}>
+          <a className="netline" href={explorerAccount(v.config.network, v.config.escrowContract)} target="_blank" rel="noreferrer" title={v.config.escrowContract}>
             <i className="pulse" />
-            NEAR {session.config.network}
+            NEAR {v.config.network}
           </a>
-          <div className="who">
-            <span className="avatar">{session.accountId.slice(0, 1).toUpperCase()}</span>
-            <span className="name grow" title={session.accountId}>
-              {session.accountId}
-            </span>
-            <button className="btn ghost" style={{ height: 28, padding: "0 6px" }} onClick={signOut} title="Sign out" aria-label="Sign out">
-              <Icon name="out" />
-            </button>
-          </div>
+          {session ? (
+            <div className="who">
+              <span className="avatar">{session.accountId.slice(0, 1).toUpperCase()}</span>
+              <span className="name grow" title={session.accountId}>
+                {session.accountId}
+              </span>
+              <button className="btn ghost" style={{ height: 28, padding: "0 6px" }} onClick={signOut} title="Sign out" aria-label="Sign out">
+                <Icon name="out" />
+              </button>
+            </div>
+          ) : (
+            <div className="who guest">
+              <span className="grow sm t3">Browsing without a wallet</span>
+              {signInLink}
+            </div>
+          )}
         </div>
       </aside>
       <div className="main">
@@ -161,18 +187,22 @@ export function App() {
           </a>
           {links}
           <span className="grow" />
-          <button className="btn ghost" onClick={signOut} aria-label="Sign out">
-            <Icon name="out" />
-          </button>
+          {session ? (
+            <button className="btn ghost" onClick={signOut} aria-label="Sign out">
+              <Icon name="out" />
+            </button>
+          ) : (
+            signInLink
+          )}
         </nav>
         {preview && <div className="preview-note">Development preview: live data from the API as a test account. Signing is disabled.</div>}
         <main className="page">
           {error && <p className="banner bad" style={{ marginBottom: 20 }}>{error}</p>}
-          {isNew && <CreateJob key={route} session={session} />}
-          {isBounties && <BountyBoard session={session} />}
-          {jobMatch && <JobDetail key={jobMatch[1]} session={session} jobId={jobMatch[1]!} />}
-          {swarmMatch && <Swarm key={route} session={session} {...(swarmMatch[1] ? { agentId: swarmMatch[1] } : {})} />}
-          {!jobMatch && !isNew && !isBounties && !swarmMatch && <Dashboard me={session.accountId} />}
+          {isNew && session && <CreateJob key={route} session={session} />}
+          {isBounties && <BountyBoard session={v} />}
+          {jobMatch && <JobDetail key={jobMatch[1]} session={v} jobId={jobMatch[1]!} />}
+          {swarmMatch && <Swarm key={route} session={v} {...(swarmMatch[1] ? { agentId: swarmMatch[1] } : {})} />}
+          {!jobMatch && !isNew && !isBounties && !swarmMatch && session && <Dashboard me={session.accountId} />}
         </main>
       </div>
     </div>
@@ -198,6 +228,13 @@ function Landing(props: {
           <Mark />
           Settle
         </a>
+        <nav className="landing-nav" aria-label="Explore">
+          <a href="#/bounties">Bounties</a>
+          <a href="#/swarm">Swarm</a>
+          <a href="https://github.com/folarihn/settle/blob/main/docs/FOR_AGENTS.md" target="_blank" rel="noreferrer">
+            For agents
+          </a>
+        </nav>
         <span className="grow" />
         {config && (
           <a className="netline" href={explorerAccount(config.network, config.escrowContract)} target="_blank" rel="noreferrer">
@@ -214,11 +251,14 @@ function Landing(props: {
 
       <section className="hero">
         <div>
-          <div className="eyebrow">Escrow for people and AI agents · NEAR</div>
+          <div className="eyebrow">
+            <i />
+            Escrow for people and AI agents · NEAR
+          </div>
           <h1 className="display">
             Work, verified.
             <br />
-            <em>Then paid.</em>
+            <em className="grad-text">Then paid.</em>
           </h1>
         </div>
         <div>
@@ -228,16 +268,19 @@ function Landing(props: {
           </p>
           <div className="cta">
             {connect && (
-              <button className="btn lg" onClick={() => wallet.modal.show()}>
+              <button className="btn lg glow" onClick={() => wallet.modal.show()}>
                 Connect a testnet wallet
               </button>
             )}
             {accountId && (
-              <button className="btn lg" onClick={signIn} disabled={busy}>
+              <button className="btn lg glow" onClick={signIn} disabled={busy}>
                 {busy ? "Waiting for wallet…" : `Sign in as ${accountId}`}
               </button>
             )}
             {!wallet && <span className="t3">Loading wallet support…</span>}
+            <a className="btn lg secondary" href="#/bounties">
+              Browse bounties
+            </a>
           </div>
           <p className="fine">
             Signing in signs a message; it sends no transaction. New to NEAR testnet? Create a testnet account in{" "}
@@ -253,6 +296,11 @@ function Landing(props: {
           {error && <p className="banner bad" style={{ marginTop: 16 }}>{error}</p>}
         </div>
       </section>
+
+      <EscrowVisual />
+      <p className="vis-caption">How every agreement moves money. A diagram, not live data; the live record is below.</p>
+
+      {config && <LiveRecord />}
 
       <section className="flow" aria-label="How it works">
         {[

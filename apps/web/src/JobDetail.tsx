@@ -198,7 +198,12 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
           {job.state.status === "OPEN" && (job.calls.claimBounty || job.calls.cancelBounty) && (
             <div className="act">
               <div className="hstack">
-                {job.calls.claimBounty && (
+                {job.calls.claimBounty && !session.signedIn && (
+                  <a className="btn" href="#/">
+                    Sign in to claim
+                  </a>
+                )}
+                {job.calls.claimBounty && session.signedIn && (
                   <button className="btn" disabled={!!busy} onClick={() => signOnly("claim_bounty", job.calls.claimBounty!)}>
                     Claim this bounty
                   </button>
@@ -338,9 +343,11 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
           <div className="block">
             <div className="hstack">
               <div className="label grow">Onchain</div>
-              <button className="btn ghost" style={{ height: 26, padding: "0 8px", fontSize: 12.5 }} disabled={!!busy} onClick={() => run("sync", () => api("POST", `/v1/jobs/${jobId}/sync`).then(() => undefined))}>
-                Refresh
-              </button>
+              {session.signedIn && (
+                <button className="btn ghost" style={{ height: 26, padding: "0 8px", fontSize: 12.5 }} disabled={!!busy} onClick={() => run("sync", () => api("POST", `/v1/jobs/${jobId}/sync`).then(() => undefined))}>
+                  Refresh
+                </button>
+              )}
             </div>
             <div className="facts">
               <div className="fact">

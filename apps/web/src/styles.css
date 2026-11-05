@@ -1403,3 +1403,525 @@ textarea:focus {
     margin-top: 56px;
   }
 }
+
+/* ============================================================================================
+ * Color, depth and motion. A NEAR-green to violet brand gradient used sparingly: the mark, the
+ * headline accent, the primary button glow and the live figures. Surfaces get a soft aurora and a
+ * faint grid. Motion is short and purposeful, and switched off under prefers-reduced-motion.
+ * ========================================================================================== */
+:root {
+  --g1: #00b981;
+  --g2: #1fa8c9;
+  --g3: #7b61ff;
+  --grad: linear-gradient(110deg, var(--g1), var(--g2) 50%, var(--g3));
+  --glow-1: rgba(0, 197, 138, 0.16);
+  --glow-2: rgba(123, 97, 255, 0.13);
+  --card: rgba(255, 255, 255, 0.72);
+  --card-line: rgba(15, 15, 20, 0.08);
+  --shadow: 0 1px 2px rgba(15, 15, 20, 0.04), 0 8px 28px -12px rgba(15, 15, 20, 0.12);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --g1: #00ec97;
+    --g2: #38c8e8;
+    --g3: #9b87ff;
+    --glow-1: rgba(0, 236, 151, 0.12);
+    --glow-2: rgba(155, 135, 255, 0.14);
+    --card: rgba(22, 22, 26, 0.62);
+    --card-line: rgba(255, 255, 255, 0.07);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 36px -14px rgba(0, 0, 0, 0.6);
+    --accent: #00ec97;
+    --accent-soft: rgba(0, 236, 151, 0.1);
+    --m-paid: #00ec97;
+  }
+}
+
+/* Aurora behind every page: two soft light sources, fixed so content scrolls over them. */
+body {
+  position: relative;
+  isolation: isolate;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20vh -10vw auto;
+  height: 80vh;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 50% at 18% 20%, var(--glow-1), transparent 70%),
+    radial-gradient(38% 46% at 82% 8%, var(--glow-2), transparent 70%);
+  animation: aurora 18s var(--ease) infinite alternate;
+}
+@keyframes aurora {
+  to {
+    transform: translate3d(2vw, 3vh, 0) scale(1.06);
+  }
+}
+.side {
+  background: color-mix(in srgb, var(--side) 80%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.grad-text {
+  background: var(--grad);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sheen 8s linear infinite;
+}
+@keyframes sheen {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Navigation: an accent bar slides in on the active item. */
+.nav-item {
+  position: relative;
+  transition: background 0.18s, color 0.18s;
+}
+.side .nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--grad);
+  animation: grow-y 0.35s var(--ease);
+}
+.nav-item.active svg {
+  color: var(--accent);
+  opacity: 1;
+}
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* Buttons: primary gets depth and a brand glow; everything lifts slightly on hover. */
+.btn {
+  transition: transform 0.18s var(--ease), box-shadow 0.25s var(--ease), opacity 0.15s, background 0.15s;
+}
+.btn:not(.ghost):not(.secondary):not(.danger) {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 6px 18px -8px rgba(0, 0, 0, 0.45);
+}
+.btn:hover:not(:disabled):not(.ghost) {
+  transform: translateY(-1px);
+}
+.btn:not(.ghost):not(.secondary):not(.danger):hover:not(:disabled) {
+  opacity: 1;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--g1) 45%, transparent), 0 10px 30px -10px color-mix(in srgb, var(--g1) 70%, transparent);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+.btn.glow {
+  background: var(--grad);
+  color: #04130d;
+  font-weight: 600;
+}
+.btn.sm-btn {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 12.5px;
+}
+
+/* Live dot: a ring that ripples outward. */
+.netline .pulse {
+  position: relative;
+  background: var(--g1);
+  box-shadow: none;
+}
+.netline .pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--g1);
+  animation: ping 2.2s var(--ease) infinite;
+}
+@keyframes ping {
+  from {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+/* Figures sit on soft glass cards with a gradient hairline on top. */
+.metrics {
+  gap: 12px;
+}
+.metrics .metric,
+.metrics .metric:first-child,
+.record .metric {
+  position: relative;
+  border: 1px solid var(--card-line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  overflow: hidden;
+}
+.metrics .metric::before,
+.record .metric::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: var(--grad);
+  opacity: 0.6;
+}
+
+/* Rows: a gradient edge slides in on hover. */
+.bounty-row,
+.trow {
+  position: relative;
+  transition: background 0.2s, transform 0.25s var(--ease);
+}
+.bounty-row::before,
+.trow::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--grad);
+  transform: scaleY(0);
+  transition: transform 0.25s var(--ease);
+}
+.bounty-row:hover::before,
+.trow:hover::before {
+  transform: scaleY(1);
+}
+a.bounty-row:hover {
+  transform: translateX(3px);
+}
+.bounty-row .pay {
+  font-weight: 500;
+}
+
+/* Entrances. */
+.page > *,
+.reveal {
+  animation: rise 0.55s var(--ease) both;
+}
+.page > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.page > :nth-child(3) {
+  animation-delay: 120ms;
+}
+.page > :nth-child(n + 4) {
+  animation-delay: 180ms;
+}
+.stagger > * {
+  animation: rise 0.5s var(--ease) both;
+}
+.stagger > :nth-child(2) {
+  animation-delay: 50ms;
+}
+.stagger > :nth-child(3) {
+  animation-delay: 100ms;
+}
+.stagger > :nth-child(4) {
+  animation-delay: 150ms;
+}
+.stagger > :nth-child(5) {
+  animation-delay: 200ms;
+}
+.stagger > :nth-child(n + 6) {
+  animation-delay: 250ms;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Loading placeholders shimmer instead of saying "Loading…". */
+.skeleton {
+  height: 64px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  background: linear-gradient(90deg, var(--hover) 25%, color-mix(in srgb, var(--g1) 9%, var(--hover)) 50%, var(--hover) 75%);
+  background-size: 300% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -300% 0;
+  }
+}
+
+.who.guest {
+  gap: 10px;
+}
+
+/* ---- landing, with color ------------------------------------------------------------- */
+.landing-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom-color: var(--card-line);
+}
+.landing-nav {
+  display: flex;
+  gap: 2px;
+  margin-left: 18px;
+}
+.landing-nav a {
+  padding: 6px 10px;
+  border-radius: 7px;
+  color: var(--text-2);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.15s, background 0.15s;
+}
+.landing-nav a:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.landing {
+  overflow-x: clip;
+}
+.hero {
+  position: relative;
+  isolation: isolate;
+}
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 -48px;
+  z-index: -1;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(70% 70% at 30% 40%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(70% 70% at 30% 40%, #000 30%, transparent 75%);
+  opacity: 0.75;
+}
+.hero > * {
+  animation: rise 0.8s var(--ease) both;
+}
+.hero > :nth-child(2) {
+  animation-delay: 120ms;
+}
+.display em.grad-text {
+  color: transparent;
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 10px;
+  border: 1px solid var(--card-line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--text-2);
+}
+.eyebrow i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--g1);
+  box-shadow: 0 0 10px var(--g1);
+}
+
+/* The escrow diagram: money travels client -> contract -> worker once checks pass. */
+.escrow-vis {
+  margin: 8px 0 28px;
+  border: 1px solid var(--card-line);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 6px 6px 2px;
+  animation: rise 0.9s var(--ease) 0.25s both;
+}
+.escrow-vis svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.escrow-vis .node {
+  fill: var(--raised);
+  stroke: var(--line-2);
+}
+.escrow-vis .node.core {
+  stroke: var(--g1);
+  stroke-width: 1.5;
+}
+.escrow-vis .halo {
+  fill: var(--g1);
+  opacity: 0.12;
+  transform-origin: 360px 100px;
+  animation: breathe 3s ease-in-out infinite;
+}
+@keyframes breathe {
+  50% {
+    opacity: 0.22;
+    transform: scale(1.08);
+  }
+}
+.escrow-vis .lbl {
+  fill: var(--text);
+  font: 600 14px var(--font);
+}
+.escrow-vis .sub {
+  fill: var(--text-3);
+  font: 12px var(--font);
+}
+.escrow-vis .wire {
+  stroke: var(--line-2);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 6;
+  animation: dash 1.2s linear infinite;
+  fill: none;
+}
+@keyframes dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+.escrow-vis .coin {
+  fill: var(--g1);
+  filter: drop-shadow(0 0 6px var(--g1));
+}
+.escrow-vis .ok {
+  fill: var(--g1);
+}
+.escrow-vis .ok-text {
+  fill: #04130d;
+  font: 700 11px var(--font);
+}
+.escrow-vis .icon {
+  stroke: var(--text-2);
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.escrow-vis .core-icon {
+  stroke: var(--accent);
+}
+.vis-caption {
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin: 0 0 72px;
+}
+
+/* Live record from the API: real numbers only. */
+.record {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 72px;
+}
+.record .metric .figure {
+  font-size: 30px;
+}
+.record-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.record-head h2 {
+  font-size: 18px;
+}
+
+.flow {
+  border-top: 0;
+  gap: 12px;
+}
+.flow-step {
+  padding: 22px;
+  border: 1px solid var(--card-line);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  transition: transform 0.3s var(--ease), border-color 0.3s;
+}
+.flow-step:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--g1) 45%, transparent);
+}
+.flow-step::before {
+  display: none;
+}
+.flow-step .n {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+.pitch {
+  padding: 26px 26px 14px;
+  border: 1px solid var(--card-line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.pitch .label {
+  color: var(--accent);
+}
+
+@media (max-width: 1000px) {
+  .record {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .landing-nav {
+    display: none;
+  }
+  .metrics .metric,
+  .metrics .metric:first-child,
+  .metrics .metric:nth-child(odd),
+  .metrics .metric:nth-child(n + 3) {
+    padding: 14px;
+    border: 1px solid var(--card-line);
+  }
+  .flow {
+    gap: 10px;
+  }
+  .flow-step {
+    border-top: 1px solid var(--card-line);
+    padding: 18px;
+  }
+  .record {
+    margin-bottom: 48px;
+  }
+  .vis-caption {
+    margin-bottom: 48px;
+  }
+  .record .metric .figure {
+    font-size: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

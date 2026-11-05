@@ -41,7 +41,7 @@ describe("rate limiting and readiness", () => {
       db,
       chain: new FakeChain(),
       config,
-      limits: { authPerIp: { max: 3, windowMs: 60_000 }, verificationsPerAccount: { max: 1, windowMs: 60_000 } },
+      limits: { authPerIp: { max: 3, windowMs: 60_000 }, verificationsPerAccount: { max: 1, windowMs: 60_000 }, publicReadsPerIp: { max: 2, windowMs: 60_000 } },
     });
     const challenge = () => app.inject({ method: "POST", url: "/v1/auth/challenge", payload: { accountId: "a.testnet" } });
     for (let i = 0; i < 3; i++) expect((await challenge()).statusCode).toBe(200);
@@ -50,6 +50,11 @@ describe("rate limiting and readiness", () => {
     expect(Number(limited.headers["retry-after"])).toBeGreaterThan(0);
     const other = await app.inject({ method: "POST", url: "/v1/auth/challenge", payload: { accountId: "a.testnet" }, remoteAddress: "10.0.0.9" });
     expect(other.statusCode).toBe(200);
+
+    // Anonymous public reads have their own per-IP budget; a session is not counted against it.
+    const read = () => app.inject({ method: "GET", url: "/v1/bounties", remoteAddress: "10.0.0.7" });
+    for (let i = 0; i < 2; i++) expect((await read()).statusCode).toBe(200);
+    expect((await read()).statusCode).toBe(429);
 
     expect((await app.inject({ method: "GET", url: "/readyz" })).json()).toMatchObject({ ok: true, checks: { database: "ok", contract: "ok" } });
     await app.close();

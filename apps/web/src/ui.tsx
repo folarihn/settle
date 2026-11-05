@@ -161,8 +161,15 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
 export function Mark() {
   return (
     <svg className="mark" viewBox="0 0 24 24" aria-hidden>
-      <rect width="24" height="24" rx="6" fill="var(--inverse)" />
-      <path d="M7 9.5h6.5a2.5 2.5 0 0 1 0 5H10.5a2.5 2.5 0 0 0 0 5H17" fill="none" stroke="var(--inverse-text)" strokeWidth="2" strokeLinecap="round" transform="translate(0 -2.5)" />
+      <defs>
+        <linearGradient id="settle-mark" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="var(--g1)" />
+          <stop offset="0.55" stopColor="var(--g2)" />
+          <stop offset="1" stopColor="var(--g3)" />
+        </linearGradient>
+      </defs>
+      <rect width="24" height="24" rx="6" fill="url(#settle-mark)" />
+      <path d="M7 9.5h6.5a2.5 2.5 0 0 1 0 5H10.5a2.5 2.5 0 0 0 0 5H17" fill="none" stroke="#04130d" strokeWidth="2" strokeLinecap="round" transform="translate(0 -2.5)" />
     </svg>
   );
 }

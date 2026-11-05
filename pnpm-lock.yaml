@@ -177,6 +177,9 @@ importers:
       vite:
         specifier: 8.3.4
         version: 8.3.4
+      vitest:
+        specifier: 2.1.5
+        version: 2.1.5(@types/node@22.9.0)(lightningcss@1.33.0)
 
   packages/agent-sdk:
     dependencies:
@@ -2871,7 +2874,7 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
-  '@vitest/mocker@2.1.5(vite@5.4.21(@types/node@22.9.0)(lightningcss@1.33.0))':
+  '@vitest/mocker@2.1.5(vite@5.4.21(lightningcss@1.33.0))':
     dependencies:
       '@vitest/spy': 2.1.5
       estree-walker: 3.0.3
@@ -4165,7 +4168,7 @@ snapshots:
   vitest@2.1.5(@types/node@22.9.0)(lightningcss@1.33.0):
     dependencies:
       '@vitest/expect': 2.1.5
-      '@vitest/mocker': 2.1.5(vite@5.4.21(@types/node@22.9.0)(lightningcss@1.33.0))
+      '@vitest/mocker': 2.1.5(vite@5.4.21(lightningcss@1.33.0))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.5
       '@vitest/snapshot': 2.1.5

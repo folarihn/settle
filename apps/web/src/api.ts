@@ -94,6 +94,8 @@ export interface PublicConfig {
   fixturePath: string | null;
   workerWakeUrl: string | null;
   swarm: { model: string; nearUsd: string; operator: string; wakeUrl: string | null } | null;
+  /** The deployment's public HTTPS origin, when the API knows it. */
+  publicUrl?: string | null;
 }
 
 export interface SwarmAgent {
@@ -133,6 +135,7 @@ export class ApiError extends Error {
 }
 
 const TOKEN_KEY = "settle.session";
+export const SESSION_EXPIRED = "settle:session-expired";
 
 export function getToken(): string | null {
   try {
@@ -161,6 +164,12 @@ export async function api<T>(method: "GET" | "POST", path: string, body?: unknow
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   const json = await res.json().catch(() => ({}));
+  if (res.status === 401 && token) {
+    // The session expired or was revoked: drop it and tell the app, which falls back to the
+    // signed-out view instead of showing an error on every page.
+    setToken(null);
+    window.dispatchEvent(new Event(SESSION_EXPIRED));
+  }
   if (!res.ok) throw new ApiError(json.error?.code ?? `HTTP_${res.status}`, json.error?.message ?? res.statusText);
   return json as T;
 }

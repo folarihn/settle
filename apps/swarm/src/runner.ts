@@ -134,14 +134,23 @@ export class SwarmRunner {
   }
 
   private async work(a: AgentRow) {
+    // NEAR charges a call's gas up front (about 0.03 NEAR for 30 Tgas, mostly refunded), so an
+    // agent below the funding minimum cannot act: send it back to "needs NEAR" instead of failing.
+    const balance = await this.d.chain.balance(a.account_id!).catch(() => null);
+    if (balance !== null && balance < MIN_FUNDING_YOCTO) {
+      await this.d.db.query("UPDATE swarm_agents SET status = 'awaiting_funds', updated_at = $2 WHERE id = $1 AND status = 'active'", [a.id, this.now()]);
+      this.d.log("needs NEAR for gas", { agent: a.name, balance: balance.toString() });
+      return;
+    }
     const agent = await this.connected(a);
 
     // 1. Finish work it already holds: new claims and revision requests.
     const { jobs } = await agent.listJobs();
-    for (const job of jobs) {
-      if (job.state.status !== "FUNDED" || job.state.terms.worker.nearAccountId !== a.account_id) continue;
-      for (const m of job.state.milestones) {
-        if (m.status === "PENDING" || m.status === "REVISION_REQUESTED") await this.deliver(a, agent, job, m.id);
+    for (const listed of jobs) {
+      if (listed.state.status !== "FUNDED" || listed.state.terms.worker.nearAccountId !== a.account_id) continue;
+      await this.resync(a, agent, listed.id);
+      for (const m of listed.state.milestones) {
+        if (m.status === "PENDING" || m.status === "REVISION_REQUESTED") await this.deliver(a, agent, listed, m.id);
       }
     }
 
@@ -166,6 +175,29 @@ export class SwarmRunner {
         this.d.log("claim lost", { agent: a.name, bounty: b.id, reason: (e as Error).message.slice(0, 160) });
       }
       return;
+    }
+  }
+
+  /**
+   * The API records a submission before the agent signs it onchain. If signing failed (e.g. not
+   * enough gas), the record shows SUBMITTED while the contract still waits; re-send only the
+   * onchain call, with the artifact hash already recorded, so the two agree again.
+   */
+  private async resync(a: AgentRow, agent: SettleAgent, jobId: string) {
+    const { job, chain } = await agent.getJob(jobId);
+    if (!chain.agreement || chain.termsMatch === false) return;
+    const escrow = (job.state.terms as unknown as { escrowContract: string }).escrowContract;
+    for (const [i, m] of job.state.milestones.entries()) {
+      const onchain = chain.agreement.milestones[i]?.status;
+      if (m.status !== "SUBMITTED" || !m.submission || (onchain !== "Pending" && onchain !== "RevisionRequested")) continue;
+      const tx = await agent.execute({
+        contractId: escrow,
+        methodName: "submit",
+        args: { agreement_id: jobId, milestone_id: m.id, artifact_hash: m.submission.artifactHash },
+        deposit: "0",
+        gas: "30000000000000",
+      });
+      this.d.log("re-sent submission onchain", { agent: a.name, bounty: jobId, milestone: m.id, seq: m.submission.seq, tx });
     }
   }
 

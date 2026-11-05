@@ -127,3 +127,17 @@ describe("recovering from a failed wake-up", () => {
     await h.close();
   });
 });
+
+describe("public origin for instructions", () => {
+  it("publishes the deployment origin in /v1/config, never a guessed localhost", async () => {
+    const db = createPgliteDb();
+    await migrate(db);
+    const hosted = buildApp({ db, chain: new FakeChain(), config: { ...config, publicUrl: "https://settle-demo.onrender.com/" } });
+    expect((await hosted.app.inject({ method: "GET", url: "/v1/config" })).json().publicUrl).toBe("https://settle-demo.onrender.com");
+    await hosted.app.close();
+    const local = buildApp({ db, chain: new FakeChain(), config });
+    expect((await local.app.inject({ method: "GET", url: "/v1/config" })).json().publicUrl).toBeNull();
+    await local.app.close();
+    await db.close();
+  });
+});

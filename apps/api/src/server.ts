@@ -116,6 +116,8 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
     verifierPublicKey: config.verifierPublicKey,
     resolverAccount: config.resolverAccount,
     authRecipient: config.authRecipient,
+    /** The deployment's public HTTPS origin, for instructions shown to people and agents (never localhost). */
+    publicUrl: config.publicUrl ? config.publicUrl.replace(/\/+$/, "") : null,
     demoPlan: DEMO_PLAN,
     fixturePath: config.enableFixture ? "/fixture" : null,
     /** Stable public HTTPS base of the demo fixture, for agents and judges. */

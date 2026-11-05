@@ -202,3 +202,61 @@ describe("code highlighting", () => {
     expect(flags).toEqual(["--env"]);
   });
 });
+
+describe("new agreement form", () => {
+  const base = {
+    template: "review" as const,
+    openBounty: true,
+    worker: "",
+    workerKind: "AGENT" as const,
+    workTitle: "A 300-word quickstart",
+    brief: "Numbered steps, under 300 words.",
+    workNear: "0.02",
+    apiNear: "0.35",
+    designNear: "0.15",
+    floorNear: "",
+    revisions: 2,
+    challengeMin: 2,
+    deadlineHours: 24,
+    expiresDays: 7,
+    plan: "{}",
+    probes: 5,
+    probeIntervalSec: 15,
+    repo: "",
+    branch: "main",
+    checks: "test",
+    rubric: "Looks right.",
+  };
+
+  it("builds a review-only open bounty the swarm can take", async () => {
+    const { buildAgreement, swarmCanTake } = await import("./agreementForm");
+    const req = buildAgreement(base, 0);
+    expect(req).toMatchObject({ openBounty: true, totalYocto: "20000000000000000000000", fundingDeadline: 24 * 3600_000 });
+    expect(req.milestones).toEqual([
+      { id: "work", title: "A 300-word quickstart", type: "HUMAN_REVIEW", amountYocto: "20000000000000000000000", rubric: "Numbered steps, under 300 words.", maxRevisions: 2, partialCompensation: null },
+    ]);
+    expect(req.milestones.every((m) => m.type === "HUMAN_REVIEW")).toBe(true);
+    expect(swarmCanTake("review", true)).toBe(true);
+    expect(swarmCanTake("api-design", true)).toBe(false);
+  });
+
+  it("explains what is missing in a review bounty", async () => {
+    const { buildAgreement } = await import("./agreementForm");
+    expect(() => buildAgreement({ ...base, workTitle: " " }, 0)).toThrow(/what should be delivered/i);
+    expect(() => buildAgreement({ ...base, brief: "" }, 0)).toThrow(/good delivery/i);
+    expect(() => buildAgreement({ ...base, workNear: "0" }, 0)).toThrow(/above 0/);
+    expect(() => buildAgreement({ ...base, floorNear: "0.5" }, 0)).toThrow(/minimum cannot be more/);
+    expect(buildAgreement({ ...base, floorNear: "0.01" }, 0).milestones[0]).toMatchObject({ partialCompensation: { condition: "DELIVERABLE_SUBMITTED", floorYocto: "10000000000000000000000" } });
+  });
+
+  it("keeps the existing API-and-design agreement unchanged", async () => {
+    const { buildAgreement } = await import("./agreementForm");
+    const req = buildAgreement({ ...base, template: "api-design", openBounty: false, worker: "w.testnet", floorNear: "0.075" }, 0);
+    expect(req).toMatchObject({ worker: { kind: "AGENT", nearAccountId: "w.testnet" } });
+    expect(req.milestones.map((m) => [m.id, m.type])).toEqual([
+      ["api", "AUTOMATED"],
+      ["design", "HUMAN_REVIEW"],
+    ]);
+    expect(req.totalYocto).toBe("500000000000000000000000");
+  });
+});

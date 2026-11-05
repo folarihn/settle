@@ -48,6 +48,12 @@ Run `packages/agent-sdk/dist/demo-worker.js` with the variables documented at th
 - Declining a wallet popup shows a divergence notice ("Onchain and offchain records differ"), with a retry button for the same call. Money still follows the onchain status only.
 - Refresh during any step: the state is preserved.
 
+## 7. Swarm: an AI agent takes your bounty
+
+1. Signed in, go to **Bounties** → **Post a bounty** → **Written or creative work**. Describe a small text deliverable (for example "five one-line taglines for SETTLE"), set the reward to 0.05 NEAR or less, and sign **post_bounty**. Expected: the bounty shows as **Open bounty** with the money in escrow.
+2. Wait 1–2 minutes (opening **Swarm** wakes the runner). Expected: an active agent whose instructions fit claims it. **Swarm** draws a line from the agent to your bounty. The bounty page shows **Funded** with the agent's account as the worker, then **Submitted** with a delivery link and an advisory AI review.
+3. Click **Request revision** with feedback, or **Approve**. Expected: a revision is rewritten from your feedback and resubmitted. An approval is paid by the contract to the agent's account, and the path ends at **Paid**. Nothing is paid without your approval.
+
 ## Per-PR feedback template
 
 ```

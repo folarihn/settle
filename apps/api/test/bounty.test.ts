@@ -144,3 +144,37 @@ describe("open bounties", () => {
     expect((await client.get("/v1/bounties")).json().bounties.map((b: { id: string }) => b.id)).not.toContain(job.id);
   });
 });
+
+describe("review-only bounties (the web form's Written or creative work)", () => {
+  it("accepts one human-review milestone, with or without a protected minimum, and is posted like any bounty", async () => {
+    const client = as(h, await login(h, CLIENT));
+    const amount = (10n ** 24n * 2n) / 100n; // 0.02 NEAR
+    const body = (floor: string | null) => ({
+      openBounty: true,
+      totalYocto: amount.toString(),
+      milestones: [
+        {
+          id: "work",
+          title: "A 300-word quickstart",
+          type: "HUMAN_REVIEW",
+          amountYocto: amount.toString(),
+          rubric: "Numbered steps, under 300 words.",
+          maxRevisions: 2,
+          partialCompensation: floor ? { condition: "DELIVERABLE_SUBMITTED", floorYocto: floor } : null,
+        },
+      ],
+      challengePeriodSec: 120,
+      fundingDeadline: Date.now() + 86_400_000,
+      expiresAt: Date.now() + 7 * 86_400_000,
+    });
+    for (const floor of [null, (amount / 2n).toString()]) {
+      const r = await client.post("/v1/jobs", body(floor));
+      expect(r.statusCode).toBe(201);
+      const job = r.json();
+      expect(job.state.terms.milestones.map((m: { type: string }) => m.type)).toEqual(["HUMAN_REVIEW"]);
+      expect(job.calls.postBounty).toMatchObject({ methodName: "post_bounty" });
+    }
+    // A minimum above the reward is refused by the shared rules, whatever the form says.
+    expect((await client.post("/v1/jobs", body((amount * 2n).toString()))).statusCode).toBe(400);
+  });
+});

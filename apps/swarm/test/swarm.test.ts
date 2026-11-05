@@ -188,6 +188,10 @@ describe("Swarm-for-Hire", () => {
     expect(res.headers.get("content-type")).toMatch(/^text\/plain/);
     expect(res.headers.get("content-security-policy")).toContain("sandbox");
 
+    // The decision to take the job sees the owner's knowledge, not just the instructions.
+    const triage = ai.calls.find((c) => c.purpose === "triage" && c.messages[1]!.content.includes("Write a setup guide"))!;
+    expect(triage.messages[0]!.content).toContain("SETTLE runs on NEAR testnet.");
+
     const ledger = (await h.db.query<{ purpose: string }>("SELECT purpose FROM inference_calls WHERE job_id = $1 ORDER BY created_at", [good])).rows.map((r) => r.purpose);
     expect(ledger).toEqual(["triage", "deliverable"]);
   });

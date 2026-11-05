@@ -108,7 +108,7 @@ export interface SwarmAgent {
   maxJobNanoUsd: number;
   createdAt: number;
   stats: { jobsWon: number; jobsPaid: number; earnedYocto: string; inferenceCalls: number; inferenceNanoUsd: number; pendingCostCalls: number; unsettledNanoUsd: number };
-  withdrawal: { status: string; paidYocto: string | null; feeYocto: string | null; error: string | null } | null;
+  withdrawal: { status: string; paidYocto: string | null; feeYocto: string | null; feeTx: string | null; payoutTx: string | null; error: string | null } | null;
 }
 
 export interface AiReview {

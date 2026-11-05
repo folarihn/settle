@@ -61,7 +61,7 @@ export interface AgentView {
   maxJobNanoUsd: number;
   createdAt: number;
   stats: { jobsWon: number; jobsPaid: number; earnedYocto: string; inferenceCalls: number; inferenceNanoUsd: number; pendingCostCalls: number; unsettledNanoUsd: number };
-  withdrawal: { status: string; paidYocto: string | null; feeYocto: string | null; error: string | null } | null;
+  withdrawal: { status: string; paidYocto: string | null; feeYocto: string | null; feeTx: string | null; payoutTx: string | null; error: string | null } | null;
 }
 
 export class SwarmService {
@@ -148,8 +148,8 @@ export class SwarmService {
     stats.inferenceNanoUsd = Number(inf.rows[0]!.cost ?? 0);
     stats.pendingCostCalls = Number(inf.rows[0]!.pending);
     stats.unsettledNanoUsd = Number(inf.rows[0]!.unsettled ?? 0);
-    const wd = await this.db.query<{ status: string; paid_yocto: string | null; fee_yocto: string | null; error: string | null }>(
-      "SELECT status, paid_yocto, fee_yocto, error FROM swarm_withdrawals WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1",
+    const wd = await this.db.query<{ status: string; paid_yocto: string | null; fee_yocto: string | null; fee_tx: string | null; payout_tx: string | null; error: string | null }>(
+      "SELECT status, paid_yocto, fee_yocto, fee_tx, payout_tx, error FROM swarm_withdrawals WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 1",
       [r.id],
     );
     const w = wd.rows[0];
@@ -165,7 +165,7 @@ export class SwarmService {
       maxJobNanoUsd: Number(r.max_job_nano_usd),
       createdAt: Number(r.created_at),
       stats,
-      withdrawal: w ? { status: w.status, paidYocto: w.paid_yocto, feeYocto: w.fee_yocto, error: w.error } : null,
+      withdrawal: w ? { status: w.status, paidYocto: w.paid_yocto, feeYocto: w.fee_yocto, feeTx: w.fee_tx, payoutTx: w.payout_tx, error: w.error } : null,
     };
   }
 }

@@ -1422,16 +1422,16 @@ textarea:focus {
   --side: #ebeae1;
   --raised: #fafaf5;
   --hover: rgba(0, 0, 0, 0.04);
-  --text: #0a1913;
-  --text-2: #4b5c54;
-  --text-3: #6f7f77;
+  --text: #0a1220;
+  --text-2: #4a5468;
+  --text-3: #6d7688;
   --line: #d9d8cf;
   --line-2: #acaba6;
-  --rule: #0a1913;
-  --inverse: #0a1913;
+  --rule: #0a1220;
+  --inverse: #0a1220;
   --inverse-text: #f2f1e9;
   --signal: #00ec97;
-  --signal-ink: #0a1913;
+  --signal-ink: #0a1220;
   --signal-soft: #c7f5d8;
   --accent: #00875a;
   --accent-soft: #c7f5d8;
@@ -1442,25 +1442,25 @@ textarea:focus {
   --s-green: #00875a;
   --m-paid: #00c27c;
   --m-payable: #00875a;
-  --m-locked: #0a1913;
+  --m-locked: #0a1220;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Deep forest instead of pure black: black mixed with NEAR green, so base and accent agree. */
-    --bg: #0a1913;
-    --side: #0d1f18;
-    --raised: #12271f;
-    --hover: rgba(199, 245, 216, 0.05);
+    /* Deep navy instead of pure black: black mixed with NEAR AI blue (#0091FD); NEAR green sits on it. */
+    --bg: #0a1220;
+    --side: #0d1628;
+    --raised: #121d33;
+    --hover: rgba(176, 200, 255, 0.05);
     --text: #f2f1e9;
-    --text-2: #b4c7bd;
-    --text-3: #7a9488;
-    --line: #1c3529;
-    --line-2: #2a4a3b;
+    --text-2: #b0bccf;
+    --text-3: #75839a;
+    --line: #1c2840;
+    --line-2: #2b3a57;
     --rule: #c7f5d8;
     --inverse: #f2f1e9;
-    --inverse-text: #0a1913;
+    --inverse-text: #0a1220;
     --signal: #00ec97;
-    --signal-ink: #0a1913;
+    --signal-ink: #0a1220;
     --signal-soft: rgba(0, 236, 151, 0.12);
     --accent: #00ec97;
     --accent-soft: rgba(0, 236, 151, 0.12);

@@ -1405,10 +1405,11 @@ textarea:focus {
 }
 
 /* ============================================================================================
- * "Ledger" look. References: Teenage Engineering and Nothing (one signal color on paper and ink,
- * monospace figures, a single dot-matrix moment) and printed ledgers. No cards, no pills, no
- * rounded corners: content is set on the page and separated by space and ruled lines. Square
- * buttons. Warm paper and ink, one orange for action and money moving.
+ * "Ledger" look in NEAR colors. Palette from near.org itself: black, white, warm off-white
+ * #F2F1E9, NEAR green #00EC97 (action, money moving), teal #17D9D4 (verification) and mint
+ * #C7F5D8 (highlights). Green text is darkened on light paper for contrast. References for the
+ * layout: Teenage Engineering and Nothing, and printed ledgers. No cards, no pills, no rounded
+ * corners: content is separated by space and ruled lines. Square buttons.
  * Type: Bricolage Grotesque (headings and UI), Space Mono (figures, ids, hashes), Doto (the one
  * dot-matrix accent). Motion is short and switched off under prefers-reduced-motion.
  * ========================================================================================== */
@@ -1417,53 +1418,57 @@ textarea:focus {
   --mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --dot: "Doto", var(--mono);
 
-  --bg: #f2efe7;
-  --side: #ebe7dc;
-  --raised: #fbf9f4;
-  --hover: rgba(24, 22, 18, 0.05);
-  --text: #171612;
-  --text-2: #4f4b42;
-  --text-3: #87826f;
-  --line: #d9d4c6;
-  --line-2: #c4bead;
-  --rule: #171612;
-  --inverse: #171612;
-  --inverse-text: #f2efe7;
-  --signal: #ff4f00;
-  --signal-ink: #171612;
-  --signal-soft: rgba(255, 79, 0, 0.1);
-  --accent: #e04600;
-  --accent-soft: rgba(255, 79, 0, 0.1);
+  --bg: #f2f1e9;
+  --side: #ebeae1;
+  --raised: #fafaf5;
+  --hover: rgba(0, 0, 0, 0.04);
+  --text: #000000;
+  --text-2: #595959;
+  --text-3: #757575;
+  --line: #d9d8cf;
+  --line-2: #acaba6;
+  --rule: #000000;
+  --inverse: #000000;
+  --inverse-text: #ffffff;
+  --signal: #00ec97;
+  --signal-ink: #000000;
+  --signal-soft: #c7f5d8;
+  --accent: #00875a;
+  --accent-soft: #c7f5d8;
+  --teal: #17d9d4;
+  --teal-text: #0b7f7c;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 
-  --s-green: #2f7d3e;
-  --m-paid: #ff4f00;
-  --m-payable: #2f7d3e;
-  --m-locked: #171612;
+  --s-green: #00875a;
+  --m-paid: #00c27c;
+  --m-payable: #00875a;
+  --m-locked: #000000;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #131210;
-    --side: #161512;
-    --raised: #1b1a16;
-    --hover: rgba(242, 239, 231, 0.05);
-    --text: #f2efe7;
-    --text-2: #b9b3a3;
-    --text-3: #7d7867;
-    --line: #2a2823;
-    --line-2: #3a372f;
-    --rule: #f2efe7;
-    --inverse: #f2efe7;
-    --inverse-text: #131210;
-    --signal: #ff5a14;
-    --signal-ink: #131210;
-    --signal-soft: rgba(255, 90, 20, 0.12);
-    --accent: #ff6a2b;
-    --accent-soft: rgba(255, 90, 20, 0.12);
-    --s-green: #6cc07a;
-    --m-paid: #ff6a2b;
-    --m-payable: #6cc07a;
-    --m-locked: #f2efe7;
+    --bg: #000000;
+    --side: #0a0a0a;
+    --raised: #111111;
+    --hover: rgba(255, 255, 255, 0.05);
+    --text: #ffffff;
+    --text-2: #acaba6;
+    --text-3: #757575;
+    --line: #1f1f1f;
+    --line-2: #333333;
+    --rule: #f2f1e9;
+    --inverse: #f2f1e9;
+    --inverse-text: #000000;
+    --signal: #00ec97;
+    --signal-ink: #000000;
+    --signal-soft: rgba(0, 236, 151, 0.12);
+    --accent: #00ec97;
+    --accent-soft: rgba(0, 236, 151, 0.12);
+    --teal: #17d9d4;
+    --teal-text: #17d9d4;
+    --s-green: #00ec97;
+    --m-paid: #00ec97;
+    --m-payable: #00ec97;
+    --m-locked: #f2f1e9;
   }
 }
 
@@ -1507,7 +1512,7 @@ h3,
   border-radius: 0;
 }
 
-/* Navigation: plain text; the active item gets an orange rule on the left. */
+/* Navigation: plain text; the active item gets a green rule on the left. */
 .nav-item {
   transition: color 0.15s;
   position: relative;
@@ -1531,7 +1536,7 @@ h3,
   background: var(--signal);
 }
 .nav-item.active svg {
-  color: var(--signal);
+  color: var(--accent);
   opacity: 1;
 }
 
@@ -1622,7 +1627,7 @@ h3,
   color: var(--accent);
 }
 
-/* Rows: an orange tick slides in on hover. */
+/* Rows: a green tick slides in on hover. */
 .bounty-row,
 .trow {
   position: relative;
@@ -1748,7 +1753,7 @@ a.bounty-row:hover {
   font-family: var(--dot);
   font-style: normal;
   font-weight: 900;
-  color: var(--signal);
+  color: var(--accent);
   letter-spacing: -0.02em;
   line-height: 1.02;
   animation: matrix 1.3s steps(6) 0.35s both;
@@ -1800,7 +1805,7 @@ a.bounty-row:hover {
   font: 700 17px var(--font);
 }
 .escrow-vis .lbl.core {
-  fill: var(--signal);
+  fill: var(--accent);
 }
 .escrow-vis .sub {
   fill: var(--text-3);
@@ -1821,8 +1826,11 @@ a.bounty-row:hover {
 .escrow-vis .coin {
   fill: var(--signal);
 }
+.escrow-vis .flag.paid {
+  fill: var(--accent);
+}
 .escrow-vis .flag {
-  fill: var(--signal);
+  fill: var(--teal-text);
   font: 700 12px var(--mono);
   letter-spacing: 0.06em;
 }
@@ -1834,7 +1842,7 @@ a.bounty-row:hover {
   stroke-linejoin: miter;
 }
 .escrow-vis .core-icon {
-  stroke: var(--signal);
+  stroke: var(--accent);
 }
 .vis-caption {
   font-size: 12px;
@@ -1875,7 +1883,7 @@ a.bounty-row:hover {
   font-weight: 700;
 }
 
-/* How it works: four columns under one rule, numbered in orange. */
+/* How it works: four columns under one rule, numbered in green. */
 .flow {
   border-top: 2px solid var(--rule);
   gap: 0 28px;
@@ -1891,7 +1899,7 @@ a.bounty-row:hover {
 }
 .flow-step .n {
   font: 700 13px var(--mono);
-  color: var(--signal);
+  color: var(--accent);
 }
 .flow-step h3 {
   font-size: 20px;
@@ -1939,7 +1947,7 @@ a.way:hover h3 {
 }
 .way-n {
   font: 700 13px var(--mono);
-  color: var(--signal);
+  color: var(--accent);
 }
 .way-go {
   font-size: 12.5px;
@@ -2007,7 +2015,7 @@ pre.code {
   display: block;
   margin-bottom: 8px;
   font: 700 12px var(--mono);
-  color: var(--signal);
+  color: var(--accent);
 }
 .howto b {
   display: block;

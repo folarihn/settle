@@ -57,7 +57,7 @@ export function EscrowVisual() {
           <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.48;0.52;0.9;1" dur={DUR} repeatCount="indefinite" />
           ✓ VERIFIED
         </text>
-        <text className="flag" x="610" y="136" textAnchor="middle" opacity="0">
+        <text className="flag paid" x="610" y="136" textAnchor="middle" opacity="0">
           <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.84;0.87;0.97;1" dur={DUR} repeatCount="indefinite" />
           PAID
         </text>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, nearToYocto, yoctoToNear, type Job } from "./api";
 import type { Session } from "./App";
+import { wakeSwarm } from "./Swarm";
 import { sendCall } from "./wallet";
 
 type Template = "api-design" | "github" | "sustained";
@@ -125,6 +126,7 @@ export function CreateJob({ session }: { session: Session }) {
           : "Saved. Approve create_agreement in your wallet (storage deposit; the unused part is refunded)…",
       );
       const hash = await sendCall(session.wallet, call);
+      if (openBounty) wakeSwarm(session.config.swarm?.wakeUrl); // let swarm agents see it
       sessionStorage.setItem(`settle.tx.${job.id}`, JSON.stringify([{ label: openBounty ? "post_bounty" : "create_agreement", hash }]));
       window.location.hash = `#/jobs/${job.id}`;
     } catch (e) {

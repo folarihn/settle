@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, nearToYocto, yoctoToNear, type ChainSnapshot, type ContractCall, type Job, type Milestone, type MilestoneTerms, type Verification } from "./api";
+import { api, nearToYocto, yoctoToNear, type AiReview, type ChainSnapshot, type ContractCall, type Job, type Milestone, type MilestoneTerms, type Verification } from "./api";
 import type { Session } from "./App";
 import { fmtDate, isUnclaimedBounty, money, nextAction, planKind, title } from "./derive";
 import { Timeline } from "./Timeline";
@@ -20,6 +20,7 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
   const [job, setJob] = useState<Job | null>(null);
   const [chain, setChain] = useState<ChainSnapshot | null>(null);
   const [verifications, setVerifications] = useState<Verification[]>([]);
+  const [reviews, setReviews] = useState<AiReview[]>([]);
   const [txs, setTxs] = useState<TxRecord[]>(() => {
     try {
       return JSON.parse(sessionStorage.getItem(`settle.tx.${jobId}`) ?? "[]");
@@ -32,13 +33,15 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
   const [pendingCall, setPendingCall] = useState<{ label: string; call: ContractCall } | null>(null);
 
   const load = useCallback(async () => {
-    const [j, v] = await Promise.all([
+    const [j, v, r] = await Promise.all([
       api<{ job: Job; chain: ChainSnapshot }>("GET", `/v1/jobs/${jobId}`),
       api<{ verifications: Verification[] }>("GET", `/v1/jobs/${jobId}/verifications`),
+      api<{ reviews: AiReview[] }>("GET", `/v1/jobs/${jobId}/reviews`).catch(() => ({ reviews: [] as AiReview[] })),
     ]);
     setJob(j.job);
     setChain(j.chain);
     setVerifications(v.verifications);
+    setReviews(r.reviews);
   }, [jobId]);
 
   useEffect(() => {
@@ -284,6 +287,7 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
                   onchainSubmissionSeq={onchain?.milestones[i]?.submission?.seq ?? null}
                   job={job}
                   verifications={verifications.filter((v) => v.milestoneId === m.id)}
+                  review={reviews.find((r) => r.milestoneId === m.id && r.submissionSeq === m.submission?.seq) ?? null}
                   busy={!!busy}
                   act={act}
                   signOnly={signOnly}
@@ -378,6 +382,7 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
 
 interface CardProps {
   index: number;
+  review: AiReview | null;
   m: Milestone;
   terms: MilestoneTerms;
   onchainStatus: string | undefined;
@@ -392,7 +397,7 @@ interface CardProps {
   network: string;
 }
 
-function MilestoneCard({ index, m, terms, onchainStatus, onchainSubmissionSeq, job, verifications, busy, act, signOnly, run }: CardProps) {
+function MilestoneCard({ index, review, m, terms, onchainStatus, onchainSubmissionSeq, job, verifications, busy, act, signOnly, run }: CardProps) {
   const [artifact, setArtifact] = useState("");
   const [uri, setUri] = useState("");
   const [text, setText] = useState("");
@@ -645,6 +650,7 @@ function MilestoneCard({ index, m, terms, onchainStatus, onchainSubmissionSeq, j
           </div>
         )}
         {evidence !== null && <EvidenceView data={evidence} onClose={() => setEvidence(null)} />}
+        {human && review && <ReviewView review={review} />}
       </div>
     </article>
   );
@@ -753,6 +759,47 @@ function EvidenceView({ data, onClose }: { data: EvidenceResponse; onClose: () =
         </summary>
         <pre>{JSON.stringify(data, null, 2)}</pre>
       </details>
+    </div>
+  );
+}
+
+const VERDICT: Record<AiReview["verdict"], { label: string; tone: "ok" | "warn" | "bad" | "neutral" }> = {
+  meets: { label: "Meets the rubric", tone: "ok" },
+  partly: { label: "Partly meets the rubric", tone: "warn" },
+  does_not_meet: { label: "Does not meet the rubric", tone: "bad" },
+  cannot_review: { label: "Could not review", tone: "neutral" },
+};
+
+/** Governance AI review: advisory only, with NEAR AI's TEE signature status. People decide. */
+function ReviewView({ review: r }: { review: AiReview }) {
+  const v = VERDICT[r.verdict];
+  return (
+    <div className="evidence" style={{ marginTop: 18 }}>
+      <div className="hstack">
+        <span className="label grow">AI review · advisory</span>
+        <span className="xs t3 mono">{r.model}</span>
+      </div>
+      <div>
+        <Status tone={v.tone}>
+          <b style={{ color: "var(--text)" }}>{v.label}</b>
+        </Status>
+      </div>
+      <p>{r.summary}</p>
+      {r.points.length > 0 && (
+        <ul className="t2" style={{ listStyle: "disc", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+          {r.points.map((p, i) => (
+            <li key={i}>{p}</li>
+          ))}
+        </ul>
+      )}
+      <p className="xs t3">
+        {r.signature
+          ? `Signed by NEAR AI (${r.signature.kind ?? "unknown kind"}, ${r.signature.algo}) · ${r.signatureCheck ?? "not checked yet"} · signer ${r.signature.address}`
+          : r.verdict === "cannot_review"
+            ? "No model call was made."
+            : "Waiting for NEAR AI's response signature."}{" "}
+        This review informs the client and the resolver; it never approves, rejects or pays anything.
+      </p>
     </div>
   );
 }

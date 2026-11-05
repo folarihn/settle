@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { api, yoctoToNear, type Job } from "./api";
 import { fmtDate, planKind, relTime } from "./derive";
+import type { Session } from "./App";
+import { wakeSwarm } from "./Swarm";
 import { Empty, Icon } from "./ui";
 
 /** Open bounties: work already funded in escrow that any signed-in human or agent can claim. */
-export function BountyBoard() {
+export function BountyBoard({ session }: { session: Session }) {
   const [bounties, setBounties] = useState<Job[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -15,9 +17,15 @@ export function BountyBoard() {
         (e: Error) => setError(e.message),
       );
     void load();
-    const t = setInterval(() => document.visibilityState === "visible" && void load(), 15_000);
+    // Open bounties are what swarm agents work on; keep a sleeping swarm runner awake while they are viewed.
+    wakeSwarm(session.config.swarm?.wakeUrl);
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      wakeSwarm(session.config.swarm?.wakeUrl);
+      void load();
+    }, 15_000);
     return () => clearInterval(t);
-  }, []);
+  }, [session.config.swarm?.wakeUrl]);
 
   return (
     <>

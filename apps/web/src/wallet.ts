@@ -64,6 +64,15 @@ export async function sendCall(w: Wallet, call: ContractCall): Promise<string> {
   return hash;
 }
 
+/** Sends NEAR from the connected wallet (e.g. to fund a swarm agent's account). Returns the transaction hash. */
+export async function sendNear(w: Wallet, receiverId: string, yocto: string): Promise<string> {
+  const wallet = await w.selector.wallet();
+  const outcome = await wallet.signAndSendTransaction({ receiverId, actions: [actionCreators.transfer(BigInt(yocto))] });
+  const hash = outcome && typeof outcome === "object" && "transaction" in outcome ? (outcome.transaction as { hash?: string }).hash : undefined;
+  if (!hash) throw new Error("the wallet did not return a transaction hash");
+  return hash;
+}
+
 export const explorerTx = (network: string, hash: string) => `https://${network === "testnet" ? "testnet." : ""}nearblocks.io/txns/${hash}`;
 export const explorerAccount = (network: string, account: string) =>
   `https://${network === "testnet" ? "testnet." : ""}nearblocks.io/address/${account}`;

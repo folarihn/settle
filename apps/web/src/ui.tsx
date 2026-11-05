@@ -177,6 +177,14 @@ const ICONS = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  swarm: (
+    <>
+      <circle cx="6" cy="7" r="2.5" />
+      <circle cx="18" cy="7" r="2.5" />
+      <circle cx="12" cy="17" r="2.5" />
+      <path d="M8.2 8.4l2.4 6.3M15.8 8.4l-2.4 6.3M8.5 7h7" />
+    </>
+  ),
   back: <path d="M15 6l-6 6 6 6" />,
   external: <path d="M14 5h5v5M19 5l-8 8M18 14v5H5V6h5" />,
   out: <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" />,

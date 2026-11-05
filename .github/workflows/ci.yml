@@ -35,8 +35,8 @@ jobs:
       # Unit and integration tests; the API tests use in-process PGlite here...
       - run: pnpm test
       # ...and are repeated against a real Postgres server.
-      - name: API, agent SDK, MCP server and bounty agent tests on Postgres 16
-        run: pnpm --workspace-concurrency=1 --filter @settle/api --filter @settle/agent-sdk --filter @settle/mcp-server --filter @settle/bounty-agent test
+      - name: API, agent SDK, MCP server, bounty agent and swarm tests on Postgres 16
+        run: pnpm --workspace-concurrency=1 --filter @settle/api --filter @settle/agent-sdk --filter @settle/mcp-server --filter @settle/bounty-agent --filter @settle/swarm test
         env:
           SETTLE_TEST_DATABASE_URL: postgres://postgres:settle@localhost:5432/settle_test
 

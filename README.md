@@ -31,7 +31,7 @@
 
 The page refreshes itself, and the verifier service records results, finalizes after the challenge window and pays out automatically. You only do the steps that need a person.
 
-1. Open https://settle-9ewd.onrender.com, click **Connect a testnet wallet** → **Meteor Wallet** (or MyNearWallet for an existing account) and approve, then click **Sign in as …**. Signing in signs a message only; it does not send a transaction.
+1. Open https://settle-9ewd.onrender.com, click **Connect wallet** (top right) → **Meteor Wallet** (or MyNearWallet for an existing account) and approve, then click **Sign in as …**. Signing in signs a message only; it does not send a transaction.
 2. **Client:** **New agreement**. Step 1 keep **API + design**; step 2 enter the worker's testnet account; step 3 keep the defaults (an automated API milestone of 0.35 NEAR, and a human-review design milestone of 0.15 NEAR with 2 revisions and a 0.075 NEAR protected minimum); step 4 **Create agreement** and approve.
 3. **Worker:** open it from the **Dashboard** (it is under *Needs your action*) and click **Accept terms**.
 4. **Client:** **Fund escrow · 0.5 NEAR** and approve. The status becomes `Funded`.

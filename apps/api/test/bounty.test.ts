@@ -92,9 +92,47 @@ describe("open bounties", () => {
     expect((await claimer.get("/v1/bounties")).json().bounties.map((b: { id: string }) => b.id)).not.toContain(job.id);
     expect((await claimer.post(`/v1/jobs/${job.id}/actions`, { type: "SUBMIT", milestoneId: "api", artifactHash: "c1", uri: "https://x.example" })).statusCode).toBe(200);
 
-    // Now private to its parties again.
+    // Still public to read (ADR 0007), but only its parties can act on it.
     const other = as(h, await login(h, "other.testnet"));
-    expect((await other.get(`/v1/jobs/${job.id}`)).statusCode).toBe(404);
+    const read = await other.get(`/v1/jobs/${job.id}`);
+    expect([read.statusCode, read.json().job.roles]).toEqual([200, []]);
+    expect((await other.post(`/v1/jobs/${job.id}/actions`, { type: "APPROVE", milestoneId: "api" })).statusCode).toBe(404);
+  });
+
+  it("is readable without signing in for its whole life, but never actionable", async () => {
+    const anon = (method: "GET" | "POST", url: string, payload?: object) => h.app.inject({ method, url, ...(payload ? { payload } : {}) });
+    // A draft bounty (not yet posted onchain) and a direct agreement stay private.
+    const client = as(h, await login(h, CLIENT));
+    const draft = (await client.post("/v1/jobs", bountyInput())).json();
+    expect((await anon("GET", `/v1/jobs/${draft.id}`)).statusCode).toBe(404);
+    const direct = (await client.post("/v1/jobs", jobInput())).json();
+    expect((await anon("GET", `/v1/jobs/${direct.id}`)).statusCode).toBe(404);
+    expect((await anon("GET", `/v1/jobs/${direct.id}/events`)).statusCode).toBe(404);
+    expect((await anon("GET", `/v1/jobs/${direct.id}/verifications`)).statusCode).toBe(404);
+
+    const { job } = await postedBounty();
+    expect((await anon("GET", "/v1/bounties")).json().bounties.map((b: { id: string }) => b.id)).toContain(job.id);
+    const seen = await anon("GET", `/v1/jobs/${job.id}`);
+    expect([seen.statusCode, seen.json().job.roles]).toEqual([200, []]);
+    expect((await anon("GET", `/v1/jobs/${job.id}/events`)).statusCode).toBe(200);
+    expect((await anon("GET", `/v1/jobs/${job.id}/reviews`)).statusCode).toBe(200);
+
+    // Claimed: off the open board, still on the public record and readable.
+    h.chain.agreements.set(job.id, onchain(job.state, "Funded", CLAIMER));
+    await client.post(`/v1/jobs/${job.id}/sync`);
+    expect((await anon("GET", "/v1/bounties")).json().bounties.map((b: { id: string }) => b.id)).not.toContain(job.id);
+    const all = (await anon("GET", "/v1/bounties?scope=all")).json().bounties.map((b: { id: string }) => b.id);
+    expect(all).toContain(job.id);
+    expect(all).not.toContain(draft.id);
+    expect(all).not.toContain(direct.id);
+    expect((await anon("GET", `/v1/jobs/${job.id}`)).json().job.state.status).toBe("FUNDED");
+
+    // Every write still needs a session; a bad token is refused rather than treated as anonymous.
+    expect((await anon("POST", `/v1/jobs/${job.id}/actions`, { type: "APPROVE", milestoneId: "api" })).statusCode).toBe(401);
+    expect((await anon("POST", `/v1/jobs/${job.id}/sync`, {})).statusCode).toBe(401);
+    expect((await anon("POST", "/v1/swarm/agents", { name: "x" })).statusCode).toBe(401);
+    expect((await h.app.inject({ method: "GET", url: `/v1/jobs/${job.id}`, headers: { authorization: "Bearer not-a-real-session-token-xx" } })).statusCode).toBe(401);
+    expect((await anon("GET", "/v1/bounties?scope=everything")).statusCode).toBe(400);
   });
 
   it("mirrors a cancellation, which takes it off the board", async () => {

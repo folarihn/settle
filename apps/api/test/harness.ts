@@ -64,7 +64,7 @@ export async function startHarness(db?: Db, overrides: Partial<Config> = {}): Pr
   await migrate(database);
   const chain = new FakeChain();
   // Generous limits: this shared app logs in many times; rate limiting has its own test.
-  const limits = { authPerIp: { max: 10_000, windowMs: 60_000 }, verificationsPerAccount: { max: 10_000, windowMs: 60_000 } };
+  const limits = { authPerIp: { max: 10_000, windowMs: 60_000 }, verificationsPerAccount: { max: 10_000, windowMs: 60_000 }, publicReadsPerIp: { max: 10_000, windowMs: 60_000 } };
   // The verifier's default policy blocks loopback; only these tests open it for local servers.
   const policy = { insecureTestOrigins: [] as string[], testAddresses: ["127.0.0.1"] };
   const { app, verifications } = buildApp({ db: database, chain, config: { ...config, ...overrides }, limits, networkPolicy: policy });

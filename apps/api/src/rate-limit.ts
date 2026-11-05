@@ -33,9 +33,12 @@ export class RateLimiter {
 export interface Limits {
   authPerIp: { max: number; windowMs: number };
   verificationsPerAccount: { max: number; windowMs: number };
+  /** Reads without a session (public bounties and swarm pages). Signed-in reads are not limited here. */
+  publicReadsPerIp: { max: number; windowMs: number };
 }
 
 export const LIMITS: Limits = {
   authPerIp: { max: 30, windowMs: 10 * 60_000 },
   verificationsPerAccount: { max: 20, windowMs: 10 * 60_000 },
+  publicReadsPerIp: { max: 600, windowMs: 10 * 60_000 },
 };

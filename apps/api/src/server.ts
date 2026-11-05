@@ -56,6 +56,15 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
   const limitIp = (req: FastifyRequest) => limiter.hit(`auth:${req.ip}`, limits.authPerIp.max, limits.authPerIp.windowMs);
 
   const auth = (req: FastifyRequest): Promise<Principal> => principalFromToken(db, req.headers.authorization, now());
+  /**
+   * Public reads (ADR 0007): a session when one is sent (an invalid one is still a 401), otherwise
+   * an anonymous viewer, rate limited per IP. Services decide what an anonymous viewer may read.
+   */
+  const viewer = async (req: FastifyRequest): Promise<Principal | null> => {
+    if (req.headers.authorization) return auth(req);
+    limiter.hit(`read:${req.ip}`, limits.publicReadsPerIp.max, limits.publicReadsPerIp.windowMs);
+    return null;
+  };
 
   /** Replays the stored response when a client retries with the same Idempotency-Key. */
   async function idempotent(p: Principal, req: FastifyRequest, reply: FastifyReply, status: number, fn: () => Promise<unknown>) {
@@ -107,6 +116,8 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
     verifierPublicKey: config.verifierPublicKey,
     resolverAccount: config.resolverAccount,
     authRecipient: config.authRecipient,
+    /** The deployment's public HTTPS origin, for instructions shown to people and agents (never localhost). */
+    publicUrl: config.publicUrl ? config.publicUrl.replace(/\/+$/, "") : null,
     demoPlan: DEMO_PLAN,
     fixturePath: config.enableFixture ? "/fixture" : null,
     /** Stable public HTTPS base of the demo fixture, for agents and judges. */
@@ -140,13 +151,17 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
     return idempotent(p, req, reply, 201, () => jobs.create(p, req.body));
   });
   app.get("/v1/jobs", async (req) => ({ jobs: await jobs.list(await auth(req)) }));
-  app.get("/v1/bounties", async (req) => ({ bounties: await jobs.openBounties(await auth(req)) }));
+  app.get("/v1/bounties", async (req) => {
+    const p = await viewer(req);
+    const { scope } = z.object({ scope: z.enum(["open", "all"]).default("open") }).parse(req.query);
+    return { bounties: scope === "all" ? await jobs.allBounties(p) : await jobs.openBounties(p) };
+  });
   app.get("/v1/jobs/:id", async (req) => {
-    const p = await auth(req);
+    const p = await viewer(req);
     const job = await jobs.get(p, IdParams.parse(req.params).id);
     return { job, chain: await jobs.chainSnapshot(job.state) };
   });
-  app.get("/v1/jobs/:id/events", async (req) => ({ events: await jobs.events(await auth(req), IdParams.parse(req.params).id) }));
+  app.get("/v1/jobs/:id/events", async (req) => ({ events: await jobs.events(await viewer(req), IdParams.parse(req.params).id) }));
   app.post("/v1/jobs/:id/actions", async (req, reply) => {
     const p = await auth(req);
     return idempotent(p, req, reply, 200, () => jobs.act(p, IdParams.parse(req.params).id, req.body));
@@ -162,19 +177,19 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
     return idempotent(p, req, reply, 202, () => verifications.request(p, id, milestoneId));
   });
   app.get("/v1/jobs/:id/verifications", async (req) => ({
-    verifications: await verifications.listForJob(await auth(req), IdParams.parse(req.params).id),
+    verifications: await verifications.listForJob(await viewer(req), IdParams.parse(req.params).id),
   }));
-  app.get("/v1/verifications/:id", async (req) => verifications.get(await auth(req), IdParams.parse(req.params).id));
-  app.get("/v1/verifications/:id/evidence", async (req) => verifications.evidence(await auth(req), IdParams.parse(req.params).id));
+  app.get("/v1/verifications/:id", async (req) => verifications.get(await viewer(req), IdParams.parse(req.params).id));
+  app.get("/v1/verifications/:id/evidence", async (req) => verifications.evidence(await viewer(req), IdParams.parse(req.params).id));
 
   // ---- swarm-for-hire (ADR 0006) ----
   app.get("/v1/swarm/agents", async (req) => {
-    await auth(req);
+    await viewer(req);
     return { agents: await swarm.list() };
   });
   app.post("/v1/swarm/agents", async (req, reply) => reply.code(201).send(await swarm.createAgent(await auth(req), req.body)));
   app.get("/v1/swarm/agents/:id", async (req) => {
-    await auth(req);
+    await viewer(req);
     return swarm.get(IdParams.parse(req.params).id);
   });
   app.post("/v1/swarm/agents/:id/pause", async (req) => swarm.setPaused(await auth(req), IdParams.parse(req.params).id, true));
@@ -200,9 +215,9 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
       .send(d.content);
   });
   app.get("/v1/jobs/:id/reviews", async (req) => {
-    const p = await auth(req);
+    const p = await viewer(req);
     const { id } = IdParams.parse(req.params);
-    await jobs.get(p, id); // participants (or anyone, for an open bounty) only
+    await jobs.get(p, id); // parties, or anyone for a posted bounty
     return { reviews: await reviewsForJob(db, id) };
   });
 

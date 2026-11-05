@@ -134,24 +134,33 @@ export class JobService {
     return rows.map((r) => this.view(r.state, p.accountId));
   }
 
-  async get(p: Principal, jobId: string): Promise<JobView> {
+  /** A party, or anyone (signed in or not) for a posted bounty. */
+  async get(p: Principal | null, jobId: string): Promise<JobView> {
     const state = await this.load(this.db, jobId);
-    this.requireParticipantOrOpenBounty(state, p.accountId);
-    return this.view(state, p.accountId);
+    this.requireReadable(state, p);
+    return this.view(state, p?.accountId ?? "");
   }
 
   /** The bounty board: open bounties whose claim deadline has not passed, newest first. */
-  async openBounties(p: Principal): Promise<JobView[]> {
+  async openBounties(p: Principal | null): Promise<JobView[]> {
     const { rows } = await this.db.query<{ state: AgreementState }>(
       "SELECT state FROM jobs WHERE state->>'status' = 'OPEN' AND (state->'terms'->>'fundingDeadline')::bigint > $1 ORDER BY created_at DESC LIMIT 100",
       [this.now()],
     );
-    return rows.map((r) => this.view(r.state, p.accountId));
+    return rows.map((r) => this.view(r.state, p?.accountId ?? ""));
   }
 
-  async events(p: Principal, jobId: string) {
+  /** Every posted bounty whatever its status (open, claimed, completed, cancelled): the public record. */
+  async allBounties(p: Principal | null): Promise<JobView[]> {
+    const { rows } = await this.db.query<{ state: AgreementState }>(
+      "SELECT state FROM jobs WHERE state->'terms'->>'openBounty' = 'true' AND state->>'status' <> 'DRAFT' ORDER BY updated_at DESC LIMIT 100",
+    );
+    return rows.map((r) => this.view(r.state, p?.accountId ?? ""));
+  }
+
+  async events(p: Principal | null, jobId: string) {
     const state = await this.load(this.db, jobId);
-    this.requireParticipant(state, p.accountId);
+    this.requireReadable(state, p);
     const { rows } = await this.db.query("SELECT version, actor, type, event, at FROM job_events WHERE job_id = $1 ORDER BY version", [jobId]);
     return rows;
   }
@@ -313,7 +322,18 @@ export class JobService {
     if (rolesOf(state.terms, accountId).size === 0) throw new ApiError(404, "NOT_FOUND", "job not found");
   }
 
-  /** Open bounties are public to every signed-in account so they can be read and claimed. */
+  /**
+   * Read access (ADR 0007). A posted bounty was offered to everyone and its terms are public
+   * onchain, so it stays readable by anyone, signed in or not, for its whole life. A direct
+   * agreement, or a bounty still in draft, is readable only by its parties. Reading grants no action.
+   */
+  requireReadable(state: AgreementState, p: Principal | null): void {
+    if (state.terms.openBounty && state.status !== "DRAFT") return;
+    if (!p) throw new ApiError(404, "NOT_FOUND", "job not found");
+    this.requireParticipant(state, p.accountId);
+  }
+
+  /** Any signed-in account may sync an open bounty, so a claimer can pull its own claim. */
   requireParticipantOrOpenBounty(state: AgreementState, accountId: string): void {
     if (state.status !== "OPEN") this.requireParticipant(state, accountId);
   }

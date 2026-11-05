@@ -161,8 +161,8 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
 export function Mark() {
   return (
     <svg className="mark" viewBox="0 0 24 24" aria-hidden>
-      <rect x="0.75" y="0.75" width="22.5" height="22.5" rx="6" fill="var(--signal)" stroke="var(--signal-ink)" strokeWidth="1.5" />
-      <path d="M7 9.5h6.5a2.5 2.5 0 0 1 0 5H10.5a2.5 2.5 0 0 0 0 5H17" fill="none" stroke="var(--signal-ink)" strokeWidth="2.2" strokeLinecap="round" transform="translate(0 -2.5)" />
+      <rect width="24" height="24" fill="var(--signal)" />
+      <path d="M7 9.5h6.5a2.5 2.5 0 0 1 0 5H10.5a2.5 2.5 0 0 0 0 5H17" fill="none" stroke="var(--signal-ink)" strokeWidth="2.2" strokeLinecap="square" transform="translate(0 -2.5)" />
     </svg>
   );
 }

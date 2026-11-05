@@ -11,74 +11,62 @@ export function EscrowVisual() {
   // One cycle: funded (0-0.25), held and checked inside the contract (0.25-0.6), paid out (0.6-0.85).
   return (
     <figure className="escrow-vis" aria-label="Diagram: the client funds the escrow contract, the work is checked, and the contract pays the worker.">
-      <svg viewBox="0 0 720 200" role="img" aria-hidden>
-        <path className="wire" d="M210 100 H318" />
-        <path className="wire" d="M402 100 H510" />
+      <svg viewBox="0 0 720 150" role="img" aria-hidden>
+        <path className="wire" d="M146 34 H322" />
+        <path className="wire" d="M398 34 H574" />
 
         {/* client */}
-        <rect className="node" x="20" y="62" width="190" height="76" rx="14" />
-        <g transform="translate(42 86)">
-          <circle className="icon" cx="12" cy="9" r="5" />
-          <path className="icon" d="M3 26c1.5-5 5-8 9-8s7.5 3 9 8" />
+        <g transform="translate(97 20)">
+          <circle className="icon" cx="13" cy="8" r="5" />
+          <path className="icon" d="M3 27c1.5-6 5.5-9 10-9s8.5 3 10 9" />
         </g>
-        <text className="lbl" x="80" y="97">
+        <text className="lbl" x="110" y="84" textAnchor="middle">
           Client
         </text>
-        <text className="sub" x="80" y="116">
+        <text className="sub" x="110" y="104" textAnchor="middle">
           funds the job
         </text>
 
-        {/* escrow contract: the money is held inside while the work is checked */}
-        <circle className="halo" cx="360" cy="100" r="62" />
-        <rect className="node core" x="318" y="58" width="84" height="84" rx="20" />
-        <g transform="translate(345 84)">
-          <rect className="icon core-icon" x="3" y="13" width="24" height="18" rx="4" />
-          <path className="icon core-icon" d="M8 13V9a7 7 0 0 1 14 0v4" />
+        {/* escrow contract: holds the money while the work is checked */}
+        <g transform="translate(345 16)">
+          <rect className="icon core-icon" x="2" y="13" width="26" height="19" />
+          <path className="icon core-icon" d="M8 13V8h14v5" />
+          <path className="icon core-icon" d="M15 20v5" />
         </g>
-        <text className="lbl" x="360" y="170" textAnchor="middle">
+        <text className="lbl core" x="360" y="84" textAnchor="middle">
           Escrow contract
         </text>
-        <text className="sub" x="360" y="188" textAnchor="middle">
+        <text className="sub" x="360" y="104" textAnchor="middle">
           holds, checks, pays
         </text>
 
         {/* worker */}
-        <rect className="node" x="510" y="62" width="190" height="76" rx="14" />
-        <g transform="translate(532 86)">
-          <rect className="icon" x="3" y="4" width="20" height="16" rx="4" />
-          <circle className="icon" cx="9.5" cy="12" r="1.4" />
-          <circle className="icon" cx="16.5" cy="12" r="1.4" />
-          <path className="icon" d="M13 1v3M8 26h10" />
+        <g transform="translate(597 18)">
+          <rect className="icon" x="2" y="5" width="22" height="17" />
+          <path className="icon" d="M9 12v2M17 12v2M13 1v4M7 29h12" />
         </g>
-        <text className="lbl" x="570" y="97">
+        <text className="lbl" x="610" y="84" textAnchor="middle">
           Worker
         </text>
-        <text className="sub" x="570" y="116">
+        <text className="sub" x="610" y="104" textAnchor="middle">
           person or agent
         </text>
 
-        {/* verified, above the contract */}
-        <g opacity="0">
-          <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.48;0.54;0.9;1" dur={DUR} repeatCount="indefinite" />
-          <rect className="ok" x="316" y="22" width="88" height="22" rx="11" />
-          <text className="ok-text" x="360" y="37" textAnchor="middle">
-            ✓ Verified
-          </text>
-        </g>
-        {/* paid, above the worker */}
-        <g opacity="0">
-          <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.84;0.88;0.97;1" dur={DUR} repeatCount="indefinite" />
-          <rect className="ok" x="568" y="30" width="64" height="22" rx="11" />
-          <text className="ok-text" x="600" y="45" textAnchor="middle">
-            Paid
-          </text>
-        </g>
+        {/* flags under the labels, in step with the money */}
+        <text className="flag" x="360" y="136" textAnchor="middle" opacity="0">
+          <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.48;0.52;0.9;1" dur={DUR} repeatCount="indefinite" />
+          ✓ VERIFIED
+        </text>
+        <text className="flag" x="610" y="136" textAnchor="middle" opacity="0">
+          <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.84;0.87;0.97;1" dur={DUR} repeatCount="indefinite" />
+          PAID
+        </text>
 
-        {/* the money: visible on the wires, hidden while the contract holds it */}
-        <circle className="coin" cx="214" cy="100" r="7">
-          <animate attributeName="cx" values="214;322;398;506;506" keyTimes="0;0.25;0.6;0.85;1" dur={DUR} repeatCount="indefinite" />
+        {/* the money: a square on the wire, hidden while the contract holds it */}
+        <rect className="coin" x="146" y="29" width="10" height="10">
+          <animate attributeName="x" values="146;318;392;566;566" keyTimes="0;0.25;0.6;0.85;1" dur={DUR} repeatCount="indefinite" />
           <animate attributeName="opacity" values="0;1;1;0;0;1;1;0;0" keyTimes="0;0.04;0.22;0.25;0.6;0.63;0.82;0.86;1" dur={DUR} repeatCount="indefinite" />
-        </circle>
+        </rect>
       </svg>
     </figure>
   );

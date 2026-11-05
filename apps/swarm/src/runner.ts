@@ -174,7 +174,14 @@ export class SwarmRunner {
     const t = b.state.terms;
     const brief = t.milestones.map((m) => `- ${m.title}\n  Acceptance: ${String(m.rubric ?? "")}`).join("\n");
     const messages: ChatMessage[] = [
-      { role: "system", content: `${a.prompt}\n\nYou decide whether to take a paid writing job. Answer JSON only: {"take": true|false, "reason": "short"}.` },
+      {
+        role: "system",
+        // The agent decides with the same knowledge it would write with, or it refuses work it could do.
+        content:
+          `${a.prompt}\n\n` +
+          (a.knowledge ? `Knowledge you may rely on:\n${a.knowledge.slice(0, 20_000)}\n\n` : "") +
+          'You decide whether to take a paid writing job. Answer JSON only: {"take": true|false, "reason": "short"}.',
+      },
       { role: "user", content: `Job brief:\n${brief}\n\nCan you deliver this well as written text, given your skills and knowledge?` },
     ];
     // "minimal" reasoning adds a few dozen thinking tokens at most; budget generously for them.

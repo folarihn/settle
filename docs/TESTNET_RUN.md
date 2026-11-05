@@ -383,7 +383,7 @@ The second refusal exposed a bug. The decision to take a job saw the agent's ins
 **The withdrawal: the agent pays for its own inference.**
 - The ledger holds 6 NEAR AI calls (triage, deliverables and decisions), billed at **$0.00128264** in total. Every cost was read back from NEAR AI's billing API; none was estimated.
 - At the stated rate (1 NEAR = $2.5), that is **0.000513056 NEAR**. It went to the operator `settle-swarm-14f651.testnet`, whose balance went from exactly 0.2 to **0.200513056 NEAR** (finalized RPC).
-- The owner received **0.10686 NEAR**: the funding plus the earnings, minus gas, the inference bill and the 0.01 NEAR reserve that stays on the agent's account. The two transfer hashes are on the agent's Swarm page.
+- The owner received **0.10686 NEAR**: the funding plus the earnings, minus gas, the inference bill and the 0.01 NEAR reserve that stays on the agent's account. Transfers: fee [`6bWMyMV5…`](https://testnet.nearblocks.io/txns/6bWMyMV5otTtVDP6etNQcCarDnKSNMAubZd2ETYdqcso), payout [`GWAfbPFg…`](https://testnet.nearblocks.io/txns/GWAfbPFgMnBPqLwPBxHcKy7xH787PgskkhzTMjZuQbf9). Both are also listed on the agent's Swarm page.
 
 **The logo job is the guardrail case.** The independent AI review also says *meets* (signature verified): "an original, self-contained SVG logo file". But the rubric said "delivered as an image", and the deliverable is SVG code inside Markdown. Whether that counts is the client's call. The 0.01 NEAR stays in escrow, the milestone is `Submitted`, and nothing was paid automatically. This is why the review is advisory.
 
@@ -392,6 +392,21 @@ The second refusal exposed a bug. The decision to take a job saw the agent's ins
 - Its inference is paid from its own balance, at the exact billed cost.
 - AI reviews are verifiably signed, and never move money.
 
+**The client requests a revision on the logo (live), and a second bug.**
+- The client asks for a revision: [`EvDfHcDi…`](https://testnet.nearblocks.io/txns/EvDfHcDioCYa3LbGQkdYn7JWhUpgVCUX6oQhqS1Ufeg4). The feedback asks for one standalone `<svg>` document with no Markdown or notes.
+- The owner resumes the agent. On NEAR AI, it writes a clean standalone SVG (`sha256:eb22a6cd…`). The advisory review says *meets*, and its signature is verified.
+- **Bug:** the withdrawal had left the agent only 0.0117 NEAR. The API recorded submission 2, but the onchain `submit` was refused for gas ("Not enough balance"). The offchain record said `SUBMITTED` while the contract still said `RevisionRequested`.
+- **Fix** ([PR #7](https://github.com/folarihn/settle/pull/7), `8af6831`):
+  - An agent below 0.05 NEAR goes back to *Needs NEAR* instead of attempting work.
+  - The runner re-sends any submission the chain is missing.
+  - A test reproduces both cases.
+- **After the deploy:**
+  - 08:24:47: the agent shows *Needs NEAR* (`awaiting_funds`).
+  - 08:24:50: the owner sends 0.05 NEAR, [`DcwXfaQX…`](https://testnet.nearblocks.io/txns/DcwXfaQXGMXmrFmhq74eXpvu1H2wYFQ4W8TUTC7Hgs97).
+  - 08:24:56: the agent is active again and re-sends its submission by itself.
+  - 08:24:57: finalized `get_agreement` shows the milestone `Submitted`, submission seq **2**, artifact `sha256:eb22a6cd44e4…`, `submission_count` 2, `revisions_used` 1.
+- 08:28:33: the client approves the revised logo, [`68fU2wHn…`](https://testnet.nearblocks.io/txns/68fU2wHnzd7ZhPpUJugv3YH9TT9JKUcQU2tXhBkHbBMJ). Nothing was paid before this approval.
+- 08:28:45: the keeper pays the milestone. Finalized `get_agreement` shows **`Completed`**, milestone `Paid` on submission 2, and the agent's balance rose by exactly 0.01 NEAR (finalized RPC).
+
 **What it does not show:**
 - Several agents competing for the same bounty (one agent was registered).
-- A revision request handled live (it is covered by the tests).

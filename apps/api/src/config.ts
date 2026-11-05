@@ -41,6 +41,16 @@ export const Config = z.object({
   workerWakeUrl: z.string().url().optional(),
   /** Trust X-Forwarded-For (set when running behind the host's load balancer). */
   trustProxy: z.coerce.boolean().default(false),
+  /** Swarm-for-Hire (ADR 0006), advertised to clients when a swarm runner is deployed. */
+  swarm: z
+    .object({
+      model: z.string().min(1),
+      /** Testnet conversion rate used to charge agents for inference; a configured rate, not an oracle. */
+      nearUsd: z.string().regex(/^\d+(\.\d+)?$/),
+      operator: NearAccountId,
+      wakeUrl: z.string().url().nullable(),
+    })
+    .optional(),
 });
 export type Config = z.infer<typeof Config>;
 
@@ -57,7 +67,7 @@ const flag = (v: string | undefined) => v === "1" || v === "true";
  * Reads and checks the API process environment. Fails fast on unsafe setups instead of
  * starting a deployment that could leak the verifier key or lose data.
  */
-export function configFromEnv(env: NodeJS.ProcessEnv = process.env, role: "api" | "worker" = "api"): Config {
+export function configFromEnv(env: NodeJS.ProcessEnv = process.env, role: "api" | "worker" | "swarm" = "api"): Config {
   const parsed = Config.safeParse({
     port: env.PORT,
     databaseUrl: env.SETTLE_DATABASE_URL || undefined,
@@ -75,6 +85,14 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env, role: "api" 
     publicUrl: env.SETTLE_PUBLIC_URL || env.RENDER_EXTERNAL_URL || undefined,
     trustProxy: flag(env.SETTLE_TRUST_PROXY),
     workerWakeUrl: env.SETTLE_WORKER_WAKE_URL || undefined,
+    swarm: env.SETTLE_SWARM_OPERATOR
+      ? {
+          model: env.NEAR_AI_MODEL || "z-ai/glm-5.3-flash",
+          nearUsd: env.SETTLE_SWARM_NEAR_USD || "",
+          operator: env.SETTLE_SWARM_OPERATOR,
+          wakeUrl: env.SETTLE_SWARM_WAKE_URL || null,
+        }
+      : undefined,
   });
   if (!parsed.success) {
     const missing = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
@@ -97,6 +115,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env, role: "api" 
   if (role === "api") {
     // The internet-facing API must never hold the verifier seed. The only exception is the
     // single-process PGlite demo, where the worker runs in-process by design.
+    if (env.SETTLE_SWARM_SECRET) {
+      throw new ConfigError("SETTLE_SWARM_SECRET (agent key encryption) must not be set on the API process; give it only to the swarm runner");
+    }
     if (env.SETTLE_RELAYER_PRIVATE_KEY) {
       throw new ConfigError("SETTLE_RELAYER_PRIVATE_KEY must not be set on the API process; give it only to the worker");
     }
@@ -106,6 +127,10 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env, role: "api" 
     if (!config.databaseUrl && !flag(env.SETTLE_ALLOW_EPHEMERAL_DB)) {
       throw new ConfigError("SETTLE_DATABASE_URL is required (set SETTLE_ALLOW_EPHEMERAL_DB=1 only for a throwaway local demo)");
     }
+  }
+  if (role === "swarm" && (env.SETTLE_VERIFIER_SEED || env.SETTLE_RELAYER_PRIVATE_KEY)) {
+    // Swarm agents are workers; the verifier judges workers. One process must never be both.
+    throw new ConfigError("the swarm runner must not hold the verifier seed or the keeper key");
   }
   return config;
 }

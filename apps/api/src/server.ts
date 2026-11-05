@@ -12,6 +12,7 @@ import { ApiError, toErrorResponse } from "./errors.js";
 import { JobService } from "./jobs.js";
 import { LIMITS, RateLimiter, type Limits } from "./rate-limit.js";
 import { VerificationService } from "./verifications.js";
+import { DeliverableService, reviewsForJob, SwarmService } from "./swarm.js";
 import { WebhookService } from "./webhooks.js";
 import { workerWaker } from "./worker.js";
 import type { NetworkPolicy } from "@settle/verifier";
@@ -36,6 +37,8 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
   const limiter = new RateLimiter(now);
   const jobs = new JobService(db, chain, config, now);
   const webhooks = new WebhookService(db, now, networkPolicy);
+  const swarm = new SwarmService(db, now);
+  const deliverables = new DeliverableService(db, now);
   const verifications = new VerificationService(db, jobs, config, now, config.workerWakeUrl ? workerWaker(config.workerWakeUrl, app.log) : undefined);
 
   app.setErrorHandler((err, req, reply) => {
@@ -115,6 +118,8 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
      * verification is queued. The route returns no data and does no work itself.
      */
     workerWakeUrl: config.workerWakeUrl ?? null,
+    /** Swarm-for-Hire settings, when a swarm runner is deployed. */
+    swarm: config.swarm ?? null,
   }));
 
   // ---- auth (identical for humans and agents) ----
@@ -161,6 +166,45 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
   }));
   app.get("/v1/verifications/:id", async (req) => verifications.get(await auth(req), IdParams.parse(req.params).id));
   app.get("/v1/verifications/:id/evidence", async (req) => verifications.evidence(await auth(req), IdParams.parse(req.params).id));
+
+  // ---- swarm-for-hire (ADR 0006) ----
+  app.get("/v1/swarm/agents", async (req) => {
+    await auth(req);
+    return { agents: await swarm.list() };
+  });
+  app.post("/v1/swarm/agents", async (req, reply) => reply.code(201).send(await swarm.createAgent(await auth(req), req.body)));
+  app.get("/v1/swarm/agents/:id", async (req) => {
+    await auth(req);
+    return swarm.get(IdParams.parse(req.params).id);
+  });
+  app.post("/v1/swarm/agents/:id/pause", async (req) => swarm.setPaused(await auth(req), IdParams.parse(req.params).id, true));
+  app.post("/v1/swarm/agents/:id/resume", async (req) => swarm.setPaused(await auth(req), IdParams.parse(req.params).id, false));
+  app.post("/v1/swarm/agents/:id/withdraw", async (req) => swarm.requestWithdrawal(await auth(req), IdParams.parse(req.params).id));
+
+  // Content-addressed deliverables. The hash is also the onchain artifact hash, so anyone can
+  // check the bytes they read are the bytes that were submitted.
+  app.post("/v1/deliverables", async (req, reply) => {
+    const d = await deliverables.create(await auth(req), req.body);
+    return reply.code(201).send({ ...d, url: `/d/${d.hash.slice(7)}` });
+  });
+  app.get("/d/:hex", async (req, reply) => {
+    const { hex } = z.object({ hex: z.string().regex(/^[0-9a-f]{64}$/) }).parse(req.params);
+    const d = await deliverables.get(`sha256:${hex}`);
+    if (!d) return reply.code(404).type("text/plain").send("not found");
+    // Plain text only, never rendered as HTML by the browser.
+    return reply
+      .header("x-content-type-options", "nosniff")
+      .header("content-security-policy", "default-src 'none'; sandbox")
+      .header("x-settle-author", d.author)
+      .type("text/plain; charset=utf-8")
+      .send(d.content);
+  });
+  app.get("/v1/jobs/:id/reviews", async (req) => {
+    const p = await auth(req);
+    const { id } = IdParams.parse(req.params);
+    await jobs.get(p, id); // participants (or anyone, for an open bounty) only
+    return { reviews: await reviewsForJob(db, id) };
+  });
 
   // ---- webhooks (sent by the worker process, never from here) ----
   app.post("/v1/webhooks", async (req, reply) => reply.code(201).send(await webhooks.create(await auth(req), req.body)));

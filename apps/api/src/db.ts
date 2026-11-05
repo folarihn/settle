@@ -137,6 +137,77 @@ const MIGRATIONS = [
      created_at BIGINT NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS webhook_deliveries_due ON webhook_deliveries (next_attempt_at) WHERE delivered_at IS NULL`,
+  // Content-addressed deliverables: the id is the SHA-256 of the exact bytes.
+  `CREATE TABLE IF NOT EXISTS deliverables (
+     hash TEXT PRIMARY KEY,
+     content TEXT NOT NULL,
+     author_account TEXT NOT NULL,
+     job_id TEXT,
+     created_at BIGINT NOT NULL
+   )`,
+  // Swarm agents. Keys are generated and held (encrypted) only by the swarm runner.
+  `CREATE TABLE IF NOT EXISTS swarm_agents (
+     id TEXT PRIMARY KEY,
+     owner_account TEXT NOT NULL,
+     name TEXT NOT NULL,
+     prompt TEXT NOT NULL,
+     knowledge TEXT NOT NULL,
+     max_bounty_yocto TEXT NOT NULL,
+     max_job_nano_usd BIGINT NOT NULL,
+     status TEXT NOT NULL CHECK (status IN ('provisioning', 'awaiting_funds', 'active', 'paused')),
+     account_id TEXT UNIQUE,
+     public_key TEXT,
+     secret_enc TEXT,
+     created_at BIGINT NOT NULL,
+     updated_at BIGINT NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS swarm_withdrawals (
+     id TEXT PRIMARY KEY,
+     agent_id TEXT NOT NULL REFERENCES swarm_agents(id),
+     status TEXT NOT NULL CHECK (status IN ('requested', 'done', 'failed')),
+     inference_nano_usd BIGINT,
+     fee_yocto TEXT,
+     paid_yocto TEXT,
+     fee_tx TEXT,
+     payout_tx TEXT,
+     error TEXT,
+     created_at BIGINT NOT NULL,
+     updated_at BIGINT NOT NULL
+   )`,
+  // Every NEAR AI call: who for, what for, usage, and the exact billed cost once NEAR AI reports it.
+  `CREATE TABLE IF NOT EXISTS inference_calls (
+     id TEXT PRIMARY KEY,
+     agent_id TEXT,
+     job_id TEXT,
+     milestone_id TEXT,
+     purpose TEXT NOT NULL CHECK (purpose IN ('triage', 'deliverable', 'review')),
+     model TEXT NOT NULL,
+     completion_id TEXT NOT NULL,
+     inference_id TEXT NOT NULL,
+     prompt_tokens INTEGER NOT NULL,
+     completion_tokens INTEGER NOT NULL,
+     cost_nano_usd BIGINT,
+     settled BOOLEAN NOT NULL DEFAULT FALSE,
+     created_at BIGINT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS inference_calls_agent ON inference_calls (agent_id)`,
+  // Advisory AI reviews of human-review submissions, with NEAR AI's TEE response signature.
+  `CREATE TABLE IF NOT EXISTS ai_reviews (
+     job_id TEXT NOT NULL,
+     milestone_id TEXT NOT NULL,
+     submission_seq INTEGER NOT NULL,
+     verdict TEXT NOT NULL CHECK (verdict IN ('meets', 'partly', 'does_not_meet', 'cannot_review')),
+     summary TEXT NOT NULL,
+     points JSONB NOT NULL,
+     model TEXT NOT NULL,
+     completion_id TEXT,
+     request_body TEXT,
+     response_body TEXT,
+     signature JSONB,
+     signature_check TEXT,
+     created_at BIGINT NOT NULL,
+     PRIMARY KEY (job_id, milestone_id, submission_seq)
+   )`,
 ];
 
 export async function migrate(db: Db): Promise<void> {

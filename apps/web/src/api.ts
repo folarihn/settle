@@ -93,6 +93,34 @@ export interface PublicConfig {
   demoPlan: unknown;
   fixturePath: string | null;
   workerWakeUrl: string | null;
+  swarm: { model: string; nearUsd: string; operator: string; wakeUrl: string | null } | null;
+}
+
+export interface SwarmAgent {
+  id: string;
+  name: string;
+  owner: string;
+  account: string | null;
+  status: "provisioning" | "awaiting_funds" | "active" | "paused";
+  prompt: string;
+  knowledgeChars: number;
+  maxBountyYocto: string;
+  maxJobNanoUsd: number;
+  createdAt: number;
+  stats: { jobsWon: number; jobsPaid: number; earnedYocto: string; inferenceCalls: number; inferenceNanoUsd: number; pendingCostCalls: number; unsettledNanoUsd: number };
+  withdrawal: { status: string; paidYocto: string | null; feeYocto: string | null; error: string | null } | null;
+}
+
+export interface AiReview {
+  milestoneId: string;
+  submissionSeq: number;
+  verdict: "meets" | "partly" | "does_not_meet" | "cannot_review";
+  summary: string;
+  points: string[];
+  model: string;
+  signature: { kind: string | null; address: string; algo: string } | null;
+  signatureCheck: string | null;
+  createdAt: number;
 }
 
 export class ApiError extends Error {

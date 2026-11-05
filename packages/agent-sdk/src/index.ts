@@ -206,6 +206,18 @@ export class SettleAgent {
     return last;
   }
 
+  /** Stores a deliverable addressed by the SHA-256 of its bytes; submit `hash` as the artifact hash. */
+  createDeliverable(content: string, jobId?: string) {
+    return this.call<{ hash: string; bytes: number; url: string }>("POST", "/v1/deliverables", { content, ...(jobId ? { jobId } : {}) });
+  }
+  /** The job's recorded history (e.g. a client's revision feedback). */
+  jobEvents(id: string) {
+    return this.call<{ events: { version: number; actor: string; type: string; event: Record<string, unknown>; at: number | string }[] }>(
+      "GET",
+      `/v1/jobs/${encodeURIComponent(id)}/events`,
+    );
+  }
+
   /** Open bounties anyone signed in may claim (claim deadline not yet passed). */
   listBounties() {
     return this.call<{ bounties: JobView[] }>("GET", "/v1/bounties");

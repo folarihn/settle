@@ -69,8 +69,10 @@ export async function runWorkerLoop(
   keeper?: { tick: (jobId?: string) => Promise<number> },
   keeperEveryMs = 15_000,
   webhooks?: { deliverDue: () => Promise<number> },
+  reviews?: { tick: () => Promise<number> },
 ): Promise<never> {
   let lastKeep = 0;
+  let lastReview = 0;
   for (;;) {
     try {
       const processed = await drainQueue(verifications, verifyOpts);
@@ -80,6 +82,11 @@ export async function runWorkerLoop(
       }
       // Notifications only: a failed delivery is retried later and never blocks verification.
       if (webhooks) await webhooks.deliverDue();
+      // Advisory AI reviews of human-review submissions (never change an agreement).
+      if (reviews && Date.now() - lastReview >= keeperEveryMs) {
+        lastReview = Date.now();
+        await reviews.tick();
+      }
       if (processed === 0) await new Promise((r) => setTimeout(r, idleMs));
     } catch (e) {
       log.error(e, "verification worker iteration failed");

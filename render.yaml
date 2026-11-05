@@ -1,6 +1,7 @@
 # Render Blueprint for the SETTLE testnet demo (Dashboard -> New -> Blueprint -> this repo).
 # One web service (API + web app + demo fixture, no keys), one verifier service (the only
-# holder of the verifier seed) and one managed Postgres. Values marked `sync: false` are
+# holder of the verifier seed), one swarm runner (the only holder of swarm agents' keys, ADR 0006)
+# and one managed Postgres. Values marked `sync: false` are
 # entered in the Render dashboard when the Blueprint is created; they are never in git.
 # Everything here runs on Render's free plans. Free web services sleep after ~15 minutes
 # idle and take about a minute to wake; free Postgres expires after 30 days.
@@ -19,6 +20,13 @@ envVarGroups:
         value: a42304d5d9a73416c6050caa2ed88ad43625b063697892d922e1ea16b0f4c723
       - key: SETTLE_RESOLVER_ACCOUNT
         value: settle-resolver-14f651.testnet
+      # Swarm-for-Hire (ADR 0006): the account paid for agents' inference, and the stated rate.
+      - key: SETTLE_SWARM_OPERATOR
+        value: settle-swarm-14f651.testnet
+      - key: SETTLE_SWARM_NEAR_USD
+        value: "2.5"
+      - key: NEAR_AI_MODEL
+        value: z-ai/glm-5.3-flash
 
 services:
   - type: web
@@ -44,6 +52,8 @@ services:
       # The verifier service's public URL (Render assigns it; this deployment's is below).
       - key: SETTLE_WORKER_WAKE_URL
         value: https://settle-verifier.onrender.com
+      - key: SETTLE_SWARM_WAKE_URL
+        value: https://settle-swarm.onrender.com
 
   # The verifier runs as its own free web service: it sleeps when idle and the API wakes it
   # (POST /kick) when a verification is queued. It is the only holder of the verifier seed.
@@ -62,6 +72,32 @@ services:
           name: settle-db
           property: connectionString
       - key: SETTLE_VERIFIER_SEED
+        sync: false
+      # Optional: advisory AI reviews of human-review submissions on NEAR AI.
+      - key: NEAR_AI_API_KEY
+        sync: false
+
+  # Swarm runner: runs swarm agents on NEAR AI. Holds agents' keys (encrypted with
+  # SETTLE_SWARM_SECRET) and never the verifier seed or keeper key (the config refuses them).
+  - type: web
+    name: settle-swarm
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: node apps/swarm/dist/main.js
+    healthCheckPath: /healthz
+    envVars:
+      - fromGroup: settle-shared
+      - key: SETTLE_DATABASE_URL
+        fromDatabase:
+          name: settle-db
+          property: connectionString
+      - key: SETTLE_API_URL
+        value: https://settle-9ewd.onrender.com
+      - key: NEAR_AI_API_KEY
+        sync: false
+      - key: SETTLE_SWARM_SECRET
         sync: false
 
 databases:

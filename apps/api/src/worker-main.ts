@@ -5,6 +5,8 @@ import { createPgDb, migrate } from "./db.js";
 import { JobService } from "./jobs.js";
 import { VerificationService } from "./verifications.js";
 import { createRelayer, Keeper } from "./keeper.js";
+import { NearAi } from "@settle/near-ai";
+import { ReviewWorker } from "./reviews.js";
 import { WebhookService } from "./webhooks.js";
 import { runWorkerLoop, startWakeServer } from "./worker.js";
 
@@ -41,5 +43,13 @@ console.log(`verification worker started for verifier key ${config.verifierPubli
 console.log(keeper ? `automatic record/finalize/payout enabled as ${config.verifierAccount}` : "automatic record/finalize/payout disabled");
 // Optional read-only GitHub token for GITHUB_CHECKS plans (public repos work without one, at a lower rate limit).
 const githubToken = process.env.SETTLE_GITHUB_TOKEN;
+// Optional: advisory AI reviews of human-review submissions on NEAR AI (ADR 0006).
+const nearAiKey = process.env.NEAR_AI_API_KEY;
+const reviews = nearAiKey
+  ? new ReviewWorker(db, new NearAi({ apiKey: nearAiKey, ...(process.env.NEAR_AI_MODEL ? { model: process.env.NEAR_AI_MODEL } : {}) }), {
+      warn: (o, m) => console.warn(m, JSON.stringify(o)),
+    })
+  : undefined;
+console.log(reviews ? "advisory AI reviews enabled (NEAR AI)" : "advisory AI reviews disabled (no NEAR_AI_API_KEY)");
 const verifyOpts = { seedHex: seed, ...(githubToken ? { githubToken } : {}) };
-await runWorkerLoop(new VerificationService(db, jobs, config), verifyOpts, { error: (o, msg) => console.error(msg, o) }, 1000, keeper, 15_000, new WebhookService(db));
+await runWorkerLoop(new VerificationService(db, jobs, config), verifyOpts, { error: (o, msg) => console.error(msg, o) }, 1000, keeper, 15_000, new WebhookService(db), reviews);

@@ -3,6 +3,7 @@ import { api, getToken, setToken, type PublicConfig } from "./api";
 import { BountyBoard } from "./BountyBoard";
 import { CreateJob } from "./CreateJob";
 import { Dashboard } from "./Dashboard";
+import { Swarm } from "./Swarm";
 import { JobDetail } from "./JobDetail";
 import { Icon, Mark } from "./ui";
 import { connectedAccount, explorerAccount, initWallet, login, type Wallet } from "./wallet";
@@ -107,7 +108,8 @@ export function App() {
   const jobMatch = route.match(/^#\/jobs\/([A-Za-z0-9_-]+)$/);
   const isNew = route.startsWith("#/new");
   const isBounties = route === "#/bounties";
-  const nav = (href: string, label: string, icon: "overview" | "bounty" | "plus", active: boolean) => (
+  const swarmMatch = route.match(/^#\/swarm(?:\/([A-Za-z0-9_-]+))?$/);
+  const nav = (href: string, label: string, icon: "overview" | "bounty" | "plus" | "swarm", active: boolean) => (
     <a href={href} className={`nav-item ${active ? "active" : ""}`} aria-current={active ? "page" : undefined} title={label}>
       <Icon name={icon} />
       <span>{label}</span>
@@ -115,8 +117,9 @@ export function App() {
   );
   const links = (
     <>
-      {nav("#/", "Overview", "overview", !jobMatch && !isNew && !isBounties)}
+      {nav("#/", "Overview", "overview", !jobMatch && !isNew && !isBounties && !swarmMatch)}
       {nav("#/bounties", "Bounties", "bounty", isBounties)}
+      {nav("#/swarm", "Swarm", "swarm", !!swarmMatch)}
       {nav("#/new", "New agreement", "plus", isNew)}
     </>
   );
@@ -166,9 +169,10 @@ export function App() {
         <main className="page">
           {error && <p className="banner bad" style={{ marginBottom: 20 }}>{error}</p>}
           {isNew && <CreateJob key={route} session={session} />}
-          {isBounties && <BountyBoard />}
+          {isBounties && <BountyBoard session={session} />}
           {jobMatch && <JobDetail key={jobMatch[1]} session={session} jobId={jobMatch[1]!} />}
-          {!jobMatch && !isNew && !isBounties && <Dashboard me={session.accountId} />}
+          {swarmMatch && <Swarm key={route} session={session} {...(swarmMatch[1] ? { agentId: swarmMatch[1] } : {})} />}
+          {!jobMatch && !isNew && !isBounties && !swarmMatch && <Dashboard me={session.accountId} />}
         </main>
       </div>
     </div>

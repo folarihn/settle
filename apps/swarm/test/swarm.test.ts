@@ -71,11 +71,32 @@ class FakeAi {
   }
 }
 
+/** Set to make the next onchain submit fail, as it did live when an agent lacked gas. */
+const failNext = { submit: false };
+
 /** SDK agents whose onchain calls are applied to the fake chain the way the contract would. */
 function executorFor(accountId: string, agentRef: () => SettleAgent) {
   return {
     execute: async (call: ContractCall) => {
       const id = (call.args.agreement_id ?? (call.args.terms as { agreement_id: string }).agreement_id) as string;
+      const ms = () => {
+        const a = h.chain.agreements.get(id)!;
+        return a.milestones[a.terms.milestones.findIndex((m) => m.id === call.args.milestone_id)]!;
+      };
+      if (call.methodName === "submit") {
+        if (failNext.submit) {
+          failNext.submit = false;
+          throw new Error("Not enough balance for the transaction");
+        }
+        const m = ms();
+        m.submission_count += 1;
+        m.submission = { seq: m.submission_count, artifact_hash: String(call.args.artifact_hash), submitted_at_ms: Date.now() };
+        m.status = "Submitted";
+      }
+      if (call.methodName === "request_revision") {
+        ms().status = "RevisionRequested";
+        ms().submission = null;
+      }
       if (call.methodName === "post_bounty") {
         const { job } = await agentRef().getJob(id);
         h.chain.agreements.set(id, { ...onchainFunded(job.state as never), status: "Open", accepted_by_worker: false, funded_at_ms: null });
@@ -233,6 +254,33 @@ describe("Swarm-for-Hire", () => {
     expect(events.find(([e, f]) => e === "skipped" && f.bounty === id && f.agent === "Frugal")?.[1].reason).toBe("even deciding would exceed the agent's inference limit");
     // The frugal agent made no call of its own.
     expect(ai.calls.slice(before).every((c) => !c.messages[0]!.content.includes("very short notes"))).toBe(true);
+  });
+
+  it("re-sends a submission the chain is missing, and sends an agent short of gas back to 'needs NEAR'", async () => {
+    const owner = as(h, await login(h, OWNER));
+    const [writer] = (await owner.get("/v1/swarm/agents")).json().agents.filter((a: { name: string }) => a.name === "Docs writer");
+    const poster = await sdk(POSTER);
+    const id = (await poster.postBounty(humanBounty("Write release notes", "Lists the changes.", NEAR / 100n))).job.id;
+
+    failNext.submit = true; // the agent's onchain submit fails after the API recorded it
+    await runner.tick();
+    let { job, chain } = await poster.getJob(id);
+    expect(job.state.milestones[0]!.status).toBe("SUBMITTED");
+    expect(chain.agreement!.milestones[0]!.status).toBe("Pending"); // the record and the chain disagree
+
+    await runner.tick(); // the agent notices and re-sends only the onchain call
+    ({ job, chain } = await poster.getJob(id));
+    expect(chain.agreement!.milestones[0]).toMatchObject({ status: "Submitted", submission: { seq: 1, artifact_hash: job.state.milestones[0]!.submission!.artifactHash } });
+    expect(events.some(([e, f]) => e === "re-sent submission onchain" && f.bounty === id)).toBe(true);
+
+    const calls = ai.calls.length;
+    balances.set(writer.account, MIN_FUNDING_YOCTO - 1n);
+    await runner.tick();
+    expect((await owner.get(`/v1/swarm/agents/${writer.id}`)).json().status).toBe("awaiting_funds");
+    expect(ai.calls.length).toBe(calls); // no inference, no transactions while it cannot pay gas
+    balances.set(writer.account, 2n * MIN_FUNDING_YOCTO);
+    await runner.tick();
+    expect((await owner.get(`/v1/swarm/agents/${writer.id}`)).json().status).toBe("active");
   });
 
   it("withdrawal pays the inference bill to the operator at the stated rate, then the rest to the owner", async () => {

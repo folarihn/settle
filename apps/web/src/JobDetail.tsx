@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { api, nearToYocto, yoctoToNear, type AiReview, type ChainSnapshot, type ContractCall, type Job, type Milestone, type MilestoneTerms, type Verification } from "./api";
 import type { Session } from "./App";
 import { fmtDate, isUnclaimedBounty, money, nextAction, planKind, title } from "./derive";
+import { describeError } from "./feedback";
+import { agreementStages } from "./stages";
 import { Timeline } from "./Timeline";
-import { AgreementStatus, Icon, MilestoneStatus, MoneyLedger, NextStep, Status, Track } from "./ui";
+import { toast } from "./toast";
+import { AgreementStatus, Icon, MilestoneStatus, MoneyLedger, NextStep, StageTrack, Status, Track } from "./ui";
 import { explorerAccount, explorerTx, sendCall } from "./wallet";
 
 interface TxRecord {
@@ -45,7 +48,7 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
   }, [jobId]);
 
   useEffect(() => {
-    load().catch((e: Error) => setError(e.message));
+    load().catch((e) => setError(describeError(e)));
   }, [load]);
 
   // Right after create_agreement the chain read can trail by a few blocks; re-check briefly.
@@ -90,7 +93,9 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
     try {
       await fn();
     } catch (e) {
-      setError(friendlyError(e instanceof Error ? e.message : String(e)));
+      const msg = friendlyError(e);
+      setError(msg);
+      toast({ tone: "bad", title: `${label.replace(/_/g, " ")} did not go through`, body: msg });
     } finally {
       setBusy(null);
       await load().catch(() => undefined);
@@ -99,12 +104,19 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
 
   const sign = async (label: string, call: ContractCall) => {
     setPendingCall({ label, call });
-    const hash = await sendCall(session.wallet, call);
-    setPendingCall(null);
+    let hash: string;
+    try {
+      hash = await sendCall(session.wallet, call);
+    } finally {
+      setPendingCall(null);
+    }
     recordTx(label, hash);
+    const link = explorerTx(session.config.network, hash);
+    toast({ tone: "info", title: `${label.replace(/_/g, " ")} sent`, body: "Waiting for the network to finalize it. Nothing is shown as done until the contract confirms.", href: link, linkText: "View transaction" });
     // The API reads the contract at "final" finality, which trails inclusion by a few blocks.
     await new Promise((r) => setTimeout(r, 3000));
     await api("POST", `/v1/jobs/${jobId}/sync`);
+    toast({ tone: "ok", title: `${label.replace(/_/g, " ")} confirmed onchain`, body: "The escrow contract has recorded it.", href: link, linkText: "View transaction" });
   };
 
   const act = (label: string, action: Record<string, unknown>, after?: () => Promise<unknown>) =>
@@ -159,8 +171,8 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
 
   return (
     <>
-      <a href="#/" className="crumb">
-        <Icon name="back" /> Overview
+      <a href={session.signedIn ? "#/agreements" : "#/bounties"} className="crumb">
+        <Icon name="back" /> {session.signedIn ? "Agreements" : "Bounties"}
       </a>
       <div className="split">
         <div style={{ minWidth: 0 }}>
@@ -178,6 +190,9 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
             <MoneyLedger m={money(job)} />
           </div>
           <div style={{ marginTop: 28 }}>
+            <StageTrack view={agreementStages(job, chain)} />
+          </div>
+          <div style={{ marginTop: 20 }}>
             <NextStep action={nextAction(job, me)} />
           </div>
 
@@ -633,7 +648,7 @@ function MilestoneCard({ index, review, m, terms, onchainStatus, onchainSubmissi
         {verifications.length > 0 && (
           <div className="runs">
             {verifications.map((v) => (
-              <div className="run" key={v.id}>
+              <div className={`run ${v.status === "QUEUED" || v.status === "RUNNING" ? "scanning" : ""} ${v.outcome === "PASS" ? "pass" : v.outcome === "FAIL" ? "fail" : ""}`} key={v.id}>
                 <span className="mono t3 hide-sm">{v.id.slice(0, 14)}</span>
                 <span className="sm t2 hide-sm">Submission #{v.submissionSeq}</span>
                 <span>
@@ -664,7 +679,8 @@ function MilestoneCard({ index, review, m, terms, onchainStatus, onchainSubmissi
 }
 
 /** Turns raw contract/wallet errors into something a person can act on. */
-function friendlyError(message: string): string {
+function friendlyError(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e);
   if (/agreement id already exists/i.test(message)) {
     return "This agreement is already created onchain (your earlier transaction went through). Reload the page to continue.";
   }
@@ -673,7 +689,7 @@ function friendlyError(message: string): string {
   }
   if (/challenge period has not ended/i.test(message)) return "The challenge window is still open. Wait until the end time shown, then reload and try again.";
   if (/User closed the window|User rejected|rejected/i.test(message)) return "The wallet request was cancelled. Nothing was sent.";
-  return message;
+  return describeError(e);
 }
 
 let lastWake = 0;

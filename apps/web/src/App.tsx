@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, getToken, setToken, type PublicConfig } from "./api";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Agreements } from "./Agreements";
+import { api, getToken, SESSION_EXPIRED, setToken, yoctoToNear, type PublicConfig } from "./api";
 import { BountyBoard } from "./BountyBoard";
 import { CreateJob } from "./CreateJob";
 import { Dashboard } from "./Dashboard";
-import { Swarm } from "./Swarm";
-import { JobDetail } from "./JobDetail";
-import { Icon, Mark } from "./ui";
-import { EscrowVisual, LiveRecord } from "./Landing";
+import { describeError, walletState } from "./feedback";
 import { ForAgents } from "./ForAgents";
+import { JobDetail } from "./JobDetail";
+import { Home } from "./Landing";
+import { Swarm } from "./Swarm";
+import { toast, ToastHost } from "./toast";
+import { Icon, Mark } from "./ui";
 import { connectedAccount, explorerAccount, initWallet, login, type Wallet } from "./wallet";
 
 export interface Session {
@@ -16,14 +19,6 @@ export interface Session {
   /** Empty when signed out: a public visitor, who has no role in anything. */
   accountId: string;
   signedIn: boolean;
-}
-
-/** Signed-out visitors browse public pages (ADR 0007); anything that would sign refuses with a clear message. */
-function signedOutWallet(real: Wallet | null): Wallet {
-  const refuse = async () => {
-    throw new Error("Sign in with a NEAR testnet wallet first: use Sign in at the bottom of the sidebar.");
-  };
-  return { ...(real ?? {}), selector: { ...(real?.selector ?? {}), wallet: refuse } } as unknown as Wallet;
 }
 
 function useHashRoute(): string {
@@ -47,6 +42,38 @@ function previewWallet(): Wallet {
   return { selector: { wallet: refuse, store: { getState: () => ({ accounts: [] }) } }, modal: { show: () => undefined } } as unknown as Wallet;
 }
 
+/** Signed-out visitors browse public pages (ADR 0007); anything that would sign refuses with a clear message. */
+function signedOutWallet(real: Wallet | null): Wallet {
+  const refuse = async () => {
+    throw new Error("Sign in with a NEAR testnet wallet first.");
+  };
+  return { ...(real ?? {}), selector: { ...(real?.selector ?? {}), wallet: refuse } } as unknown as Wallet;
+}
+
+type Page = "overview" | "agreements" | "bounties" | "swarm" | "agents" | "job" | "new" | "home";
+
+function pageOf(route: string, signedIn: boolean): Page {
+  if (/^#\/jobs\//.test(route)) return "job";
+  if (route.startsWith("#/new")) return "new";
+  if (route === "#/agreements") return "agreements";
+  if (route === "#/bounties") return "bounties";
+  if (/^#\/swarm/.test(route)) return "swarm";
+  if (route === "#/agents") return "agents";
+  if (route === "#/home") return "home";
+  return signedIn ? "overview" : "home";
+}
+
+const TITLES: Record<Page, string> = {
+  overview: "Overview",
+  agreements: "Agreements",
+  bounties: "Bounties",
+  swarm: "Swarm",
+  agents: "For agents",
+  job: "Agreement",
+  new: "New agreement",
+  home: "Home",
+};
+
 export function App() {
   const route = useHashRoute();
   const [config, setConfig] = useState<PublicConfig | null>(null);
@@ -54,8 +81,9 @@ export function App() {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState(false);
   const [preview, setPreview] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [bootError, setBootError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [drawer, setDrawer] = useState(false);
 
   const checkSession = useCallback(async () => {
     if (!getToken()) return setSignedIn(false);
@@ -91,20 +119,32 @@ export function App() {
         w.selector.store.observable.subscribe((s) => setAccountId(s.accounts.find((a) => a.active)?.accountId ?? null));
         await checkSession();
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setBootError(describeError(e));
       }
     })();
   }, [checkSession]);
 
+  // A session that expires mid-visit drops back to the public view with a notice, not an error page.
+  useEffect(() => {
+    const on = () => {
+      setSignedIn(false);
+      toast({ tone: "info", title: "Your session ended", body: "Sign in again to act on your agreements. Public pages still work." });
+    };
+    window.addEventListener(SESSION_EXPIRED, on);
+    return () => window.removeEventListener(SESSION_EXPIRED, on);
+  }, []);
+
+  useEffect(() => setDrawer(false), [route]);
+
   const signIn = async () => {
     if (!wallet || !accountId) return;
     setBusy(true);
-    setError(null);
     try {
       await login(wallet, accountId);
       await checkSession();
+      toast({ tone: "ok", title: `Signed in as ${accountId}`, body: "You signed a message. No transaction was sent." });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      toast({ tone: "bad", title: "Not signed in", body: describeError(e) });
     } finally {
       setBusy(false);
     }
@@ -114,251 +154,246 @@ export function App() {
     setToken(null);
     setSignedIn(false);
     if (wallet && !preview) await (await wallet.selector.wallet()).signOut().catch(() => undefined);
+    toast({ tone: "info", title: "Signed out" });
   };
 
   const session: Session | null = config && wallet && accountId && signedIn ? { config, wallet, accountId, signedIn: true } : null;
   const visitor: Session | null = session ?? (config ? { config, wallet: signedOutWallet(wallet), accountId: "", signedIn: false } : null);
-  const jobMatch = route.match(/^#\/jobs\/([A-Za-z0-9_-]+)$/);
-  const isNew = route.startsWith("#/new");
-  const isBounties = route === "#/bounties";
-  const swarmMatch = route.match(/^#\/swarm(?:\/([A-Za-z0-9_-]+))?$/);
-  const isAgents = route === "#/agents";
-  const nav = (href: string, label: string, icon: "overview" | "bounty" | "plus" | "swarm" | "code", active: boolean) => (
-    <a href={href} className={`nav-item ${active ? "active" : ""}`} aria-current={active ? "page" : undefined} title={label}>
+  const page = pageOf(route, !!session);
+  const state = walletState({ walletReady: !!wallet, accountId, signedIn: !!session });
+  const connect = () => wallet?.modal.show();
+
+  const account = <AccountChip state={state} accountId={accountId} busy={busy} connect={connect} signIn={signIn} />;
+
+  if (page === "home") {
+    return (
+      <>
+        <Home config={config} signedIn={!!session} account={session ? <a className="btn lime sm" href="#/">Open the app →</a> : account} />
+        <ToastHost />
+      </>
+    );
+  }
+
+  const nav = (href: string, label: string, icon: Parameters<typeof Icon>[0]["name"], on: boolean) => (
+    <a href={href} className={`nav-item ${on ? "active" : ""}`} aria-current={on ? "page" : undefined}>
       <Icon name={icon} />
       <span>{label}</span>
     </a>
   );
-  const links = (
-    <>
-      {nav("#/", session ? "Overview" : "Home", "overview", !jobMatch && !isNew && !isBounties && !swarmMatch && !isAgents)}
-      {nav("#/bounties", "Bounties", "bounty", isBounties)}
-      {nav("#/swarm", "Swarm", "swarm", !!swarmMatch)}
-      {nav("#/agents", "For agents", "code", isAgents)}
-      {session && nav("#/new", "New agreement", "plus", isNew)}
-    </>
-  );
-
-  const publicPage = isBounties || !!swarmMatch || !!jobMatch || isAgents;
-  if (!session && (!publicPage || !visitor)) {
-    return (
-      <Landing config={config} wallet={wallet} accountId={accountId} signIn={signIn} busy={busy} error={error} preview={preview} />
-    );
-  }
-  const v = visitor!;
-  const signInLink = (
-    <a className="btn sm-btn" href="#/" title="Sign in with a NEAR testnet wallet">
-      Sign in
-    </a>
-  );
 
   return (
-    <div className="app">
-      <aside className="side" aria-label="Main">
-        <a href="#/" className="brand">
-          <Mark />
-          Settle
+    <div className={`app ${drawer ? "drawer-open" : ""}`}>
+      <aside className="side" aria-label="Main navigation">
+        <a href={session ? "#/home" : "#/"} className="brand">
+          <Mark /> SETTLE
         </a>
-        {links}
-        <div className="side-foot">
-          <a className="netline" href={explorerAccount(v.config.network, v.config.escrowContract)} target="_blank" rel="noreferrer" title={v.config.escrowContract}>
-            <i className="pulse" />
-            NEAR {v.config.network}
-          </a>
-          {session ? (
-            <div className="who">
-              <span className="avatar">{session.accountId.slice(0, 1).toUpperCase()}</span>
-              <span className="name grow" title={session.accountId}>
-                {session.accountId}
-              </span>
-              <button className="btn ghost" style={{ height: 28, padding: "0 6px" }} onClick={signOut} title="Sign out" aria-label="Sign out">
-                <Icon name="out" />
-              </button>
-            </div>
-          ) : (
-            <div className="who guest">
-              <span className="grow sm t3">Browsing without a wallet</span>
-              {signInLink}
-            </div>
-          )}
-        </div>
-      </aside>
-      <div className="main">
-        <nav className="topnav" aria-label="Main">
-          <a href="#/" className="brand">
-            <Mark />
-          </a>
-          {links}
-          <span className="grow" />
-          {session ? (
-            <button className="btn ghost" onClick={signOut} aria-label="Sign out">
-              <Icon name="out" />
-            </button>
-          ) : (
-            signInLink
-          )}
+        <nav className="nav">
+          {nav("#/", "Overview", "overview", page === "overview")}
+          {nav("#/agreements", "Agreements", "list", page === "agreements" || page === "job" || page === "new")}
+          {nav("#/bounties", "Bounties", "bounty", page === "bounties")}
+          {nav("#/swarm", "Swarm", "swarm", page === "swarm")}
+          {nav("#/agents", "For agents", "code", page === "agents")}
         </nav>
+        <WalletPanel state={state} config={config} accountId={accountId} busy={busy} preview={preview} connect={connect} signIn={signIn} signOut={signOut} />
+      </aside>
+      <button className="scrim" aria-label="Close menu" onClick={() => setDrawer(false)} tabIndex={drawer ? 0 : -1} />
+
+      <div className="main">
+        <header className="statusbar">
+          <button className="menu-btn" aria-label="Open menu" aria-expanded={drawer} onClick={() => setDrawer(true)}>
+            <Icon name="menu" />
+          </button>
+          <span className="crumbs">
+            <span className="t3">SETTLE /</span> {TITLES[page]}
+          </span>
+          <span className="grow" />
+          {config && (
+            <a className="net-pill" href={explorerAccount(config.network, config.escrowContract)} target="_blank" rel="noreferrer" title={`Escrow contract ${config.escrowContract}`}>
+              <i /> NEAR {config.network}
+            </a>
+          )}
+          <span className="statusbar-account">{account}</span>
+        </header>
         {preview && <div className="preview-note">Development preview: live data from the API as a test account. Signing is disabled.</div>}
-        <main className="page">
-          {error && <p className="banner bad" style={{ marginBottom: 20 }}>{error}</p>}
-          {isNew && session && <CreateJob key={route} session={session} />}
-          {isBounties && <BountyBoard session={v} />}
-          {jobMatch && <JobDetail key={jobMatch[1]} session={v} jobId={jobMatch[1]!} />}
-          {swarmMatch && <Swarm key={route} session={v} {...(swarmMatch[1] ? { agentId: swarmMatch[1] } : {})} />}
-          {isAgents && <ForAgents session={v} />}
-          {!jobMatch && !isNew && !isBounties && !swarmMatch && !isAgents && session && <Dashboard me={session.accountId} />}
+        <main className="page" key={page === "job" || page === "swarm" ? route : page}>
+          {bootError && <p className="banner bad">{bootError}</p>}
+          {!visitor && !bootError && <div className="skeleton tall" />}
+          {visitor && (
+            <>
+              {page === "overview" && session && <Dashboard me={session.accountId} />}
+              {page === "agreements" && (session ? <Agreements me={session.accountId} /> : <SignInRequired what="see your agreements" state={state} connect={connect} signIn={signIn} busy={busy} />)}
+              {page === "new" && (session ? <CreateJob key={route} session={session} /> : <SignInRequired what="create an agreement or a bounty" state={state} connect={connect} signIn={signIn} busy={busy} />)}
+              {page === "bounties" && <BountyBoard session={visitor} />}
+              {page === "job" && <JobDetail key={route} session={visitor} jobId={route.slice("#/jobs/".length)} />}
+              {page === "swarm" && <Swarm key={route} session={visitor} {...(route.match(/^#\/swarm\/([A-Za-z0-9_-]+)$/) ? { agentId: route.slice("#/swarm/".length) } : {})} />}
+              {page === "agents" && <ForAgents session={visitor} />}
+            </>
+          )}
         </main>
       </div>
+      <ToastHost />
     </div>
   );
 }
 
-/** Signed-out first screen: what SETTLE is, how a job flows, who it is for. Facts only; no sample data. */
-function Landing(props: {
-  config: PublicConfig | null;
-  wallet: Wallet | null;
-  accountId: string | null;
-  signIn: () => void;
-  busy: boolean;
-  error: string | null;
-  preview: boolean;
-}) {
-  const { config, wallet, accountId, signIn, busy, error, preview } = props;
-  const connect = !accountId && wallet && !preview;
+/** The compact account control: what state you are in, and the one next step. */
+function AccountChip({ state, accountId, busy, connect, signIn }: { state: ReturnType<typeof walletState>; accountId: string | null; busy: boolean; connect: () => void; signIn: () => void }) {
+  if (state === "loading") return <span className="chip muted">Loading wallet…</span>;
+  if (state === "disconnected")
+    return (
+      <button className="btn lime sm" onClick={connect}>
+        Connect wallet
+      </button>
+    );
+  if (state === "connected")
+    return (
+      <button className="btn lime sm" onClick={signIn} disabled={busy} title="Signs a message to prove you own this account. Sends no transaction.">
+        {busy ? "Check your wallet…" : `Sign in as ${short(accountId!)}`}
+      </button>
+    );
   return (
-    <div className="landing">
-      <header className="landing-top">
-        <a href="#/" className="brand">
-          <Mark />
-          Settle
-        </a>
-        <nav className="landing-nav" aria-label="Explore">
-          <a href="#/bounties">Bounties</a>
-          <a href="#/swarm">Swarm</a>
-          <a href="#/agents">For agents</a>
-        </nav>
-        <span className="grow" />
-        {config && (
-          <a className="netline" href={explorerAccount(config.network, config.escrowContract)} target="_blank" rel="noreferrer">
-            <i className="pulse" />
-            NEAR {config.network}
-          </a>
-        )}
-        {connect && (
-          <button className="btn secondary" onClick={() => wallet.modal.show()}>
-            Connect wallet
-          </button>
-        )}
-      </header>
+    <span className="chip on" title={accountId!}>
+      <i /> {short(accountId!)}
+    </span>
+  );
+}
 
-      <section className="hero">
-        <div>
-          <div className="eyebrow">
-            <i />
-            Escrow for people and AI agents · NEAR
-          </div>
-          <h1 className="display">
-            Work, verified.
-            <br />
-            <em className="dot-text">Then paid.</em>
-          </h1>
-        </div>
-        <div>
-          <p className="lede">
-            The client's money waits in an escrow contract and is released milestone by milestone, by rules both sides lock in before anything is funded.
-            Code is checked by an independent verifier. Creative work is judged by people.
-          </p>
-          <div className="cta">
-            {connect && (
-              <button className="btn lg signal" onClick={() => wallet.modal.show()}>
-                Connect a testnet wallet
-              </button>
-            )}
-            {accountId && (
-              <button className="btn lg signal" onClick={signIn} disabled={busy}>
-                {busy ? "Waiting for wallet…" : `Sign in as ${accountId}`}
-              </button>
-            )}
-            {!wallet && <span className="t3">Loading wallet support…</span>}
-            <a className="btn lg secondary" href="#/bounties">
-              Browse bounties
-            </a>
-          </div>
-          <p className="fine">
-            Signing in signs a message; it sends no transaction. New to NEAR testnet? Create a testnet account in{" "}
-            <a className="link" href="https://wallet.meteorwallet.app" target="_blank" rel="noreferrer">
-              Meteor Wallet
-            </a>{" "}
-            and get free testnet NEAR from the{" "}
-            <a className="link" href="https://near-faucet.io" target="_blank" rel="noreferrer">
-              faucet
-            </a>
-            .
-          </p>
-          {error && <p className="banner bad" style={{ marginTop: 16 }}>{error}</p>}
-        </div>
-      </section>
+const short = (a: string) => (a.length > 22 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a);
 
-      <EscrowVisual />
-      <p className="vis-caption">How every agreement moves money. A diagram, not live data; the live record is below.</p>
-
-      {config && <LiveRecord />}
-
-      <section className="flow" aria-label="How it works">
-        {[
-          ["Agree", "Milestones, amounts and checks are fixed and hashed. The worker accepts; the client deposits the exact total. Or post an open bounty."],
-          ["Deliver", "An independent verifier checks APIs, sustained health or GitHub CI and signs PASS or FAIL. Creative work goes to the client."],
-          ["Challenge", "A PASS opens a window to object. Reviews allow agreed revisions, partial splits, or a ruling within a protected minimum."],
-          ["Paid", "The contract pays out. Nobody can change who receives what, and every transfer is a transaction you can inspect."],
-        ].map(([h, p], i) => (
-          <div className="flow-step" key={h}>
-            <div className="n">0{i + 1}</div>
-            <h3>{h}</h3>
-            <p>{p}</p>
-          </div>
-        ))}
-      </section>
-
-      <section className="split-2">
-        <div className="pitch">
-          <div className="label">For people</div>
-          <h2>Pay for outcomes, not promises.</h2>
-          <ul>
-            <li>Clients release money only when the agreed checks pass or they approve.</li>
-            <li>Workers see the money in escrow before they start.</li>
-            <li>Every payment step is a transaction you approve in your wallet.</li>
-          </ul>
-        </div>
-        <div className="pitch">
-          <div className="label">For AI agents</div>
-          <h2>The same rules, through code.</h2>
-          <ul>
-            <li>
-              An MCP server for Claude, Cursor and other agents, with a spending limit per agent.
-            </li>
-            <li>
-              A TypeScript SDK and signed webhooks. Agents hire agents, or claim open bounties.
-            </li>
-            <li>
-              <a className="link" href="#/agents">
-                How to connect an agent
-              </a>
-              .
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      {config && (
-        <div className="contract-strip">
-          <span className="label">Escrow contract</span>
-          <a className="mono link" href={explorerAccount(config.network, config.escrowContract)} target="_blank" rel="noreferrer">
-            {config.escrowContract}
-          </a>
-          <span className="grow" />
-          <span className="t3">Testnet only. No real funds.</span>
+/** The wallet area: connection, network, account, sign-in and balance, kept distinct. */
+function WalletPanel(props: {
+  state: ReturnType<typeof walletState>;
+  config: PublicConfig | null;
+  accountId: string | null;
+  busy: boolean;
+  preview: boolean;
+  connect: () => void;
+  signIn: () => void;
+  signOut: () => void;
+}) {
+  const { state, config, accountId, busy, preview, connect, signIn, signOut } = props;
+  const balance = useBalance(config, state === "disconnected" || state === "loading" ? null : accountId);
+  return (
+    <div className="wallet">
+      <div className="wallet-row">
+        <span className="label">Network</span>
+        <span className="mono">NEAR {config?.network ?? "…"}</span>
+      </div>
+      <div className="wallet-row">
+        <span className="label">Wallet</span>
+        <span className={`wstate ${state}`}>{state === "loading" ? "Loading…" : state === "disconnected" ? "Not connected" : "Connected"}</span>
+      </div>
+      {accountId && state !== "disconnected" && (
+        <div className="wallet-account">
+          <span className="mono" title={accountId}>
+            {accountId}
+          </span>
+          {balance !== null && <span className="t3 mono">{balance} NEAR</span>}
         </div>
       )}
+      <div className="wallet-row">
+        <span className="label">Session</span>
+        <span className={`wstate ${state === "signed-in" ? "signed-in" : ""}`}>{state === "signed-in" ? "Signed in" : "Not signed in"}</span>
+      </div>
+      {state === "disconnected" && (
+        <button className="btn lime full" onClick={connect}>
+          Connect wallet
+        </button>
+      )}
+      {state === "connected" && (
+        <>
+          <button className="btn lime full" onClick={signIn} disabled={busy}>
+            {busy ? "Check your wallet…" : "Sign in"}
+          </button>
+          <p className="wallet-note">Signing in signs a message to prove the account is yours. It sends no transaction.</p>
+          <button className="btn ghost-light full" onClick={connect}>
+            Switch account
+          </button>
+        </>
+      )}
+      {state === "signed-in" && (
+        <div className="wallet-actions">
+          {!preview && (
+            <button className="btn ghost-light" onClick={connect}>
+              Switch
+            </button>
+          )}
+          <button className="btn ghost-light" onClick={signOut}>
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The connected account's balance, read from NEAR RPC (finality "final"). Null until known. */
+function useBalance(config: PublicConfig | null, accountId: string | null): string | null {
+  const [bal, setBal] = useState<string | null>(null);
+  useEffect(() => {
+    setBal(null);
+    if (!config || !accountId) return;
+    let alive = true;
+    fetch(config.rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "view_account", finality: "final", account_id: accountId } }),
+    })
+      .then((r) => r.json())
+      .then((j: { result?: { amount?: string } }) => {
+        if (!alive || !j.result?.amount) return;
+        const n = yoctoToNear(j.result.amount);
+        const [w, f = ""] = n.split(".");
+        setBal(f ? `${w}.${f.slice(0, 3)}` : w!);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [config, accountId]);
+  return bal;
+}
+
+/** Shown in place of pages that need a signed-in account. */
+function SignInRequired({ what, state, connect, signIn, busy }: { what: string; state: ReturnType<typeof walletState>; connect: () => void; signIn: () => void; busy: boolean }): ReactNode {
+  return (
+    <div className="gate">
+      <svg viewBox="0 0 120 120" aria-hidden className="gate-art">
+        <rect x="30" y="50" width="60" height="48" />
+        <path d="M42 50 V38 a18 18 0 0 1 36 0 V50" />
+        <rect className="gate-key" x="56" y="66" width="8" height="16" />
+      </svg>
+      <span className="kicker">Sign-in required</span>
+      <h1 className="headline">This needs your account.</h1>
+      <p className="lede">
+        Sign in to {what}. Agreements are private to the people in them, so SETTLE needs to know which NEAR account is yours. Signing in signs a message; it sends no
+        transaction and moves no money.
+      </p>
+      <div className="hero-cta">
+        {state === "connected" ? (
+          <button className="btn lime lg" onClick={signIn} disabled={busy}>
+            {busy ? "Check your wallet…" : "Sign in with your wallet"}
+          </button>
+        ) : (
+          <button className="btn lime lg" onClick={connect} disabled={state === "loading"}>
+            Connect a testnet wallet
+          </button>
+        )}
+        <a className="btn ghost lg" href="#/bounties">
+          Browse public bounties
+        </a>
+      </div>
+      <p className="fine">
+        New to NEAR testnet? Create an account in{" "}
+        <a className="link" href="https://wallet.meteorwallet.app" target="_blank" rel="noreferrer">
+          Meteor Wallet
+        </a>{" "}
+        and get free testnet NEAR from the{" "}
+        <a className="link" href="https://near-faucet.io" target="_blank" rel="noreferrer">
+          faucet
+        </a>
+        .
+      </p>
     </div>
   );
 }

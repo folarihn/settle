@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, nearToYocto, yoctoToNear, type SwarmAgent } from "./api";
+import { api, nearToYocto, yoctoToNear, type Job, type SwarmAgent } from "./api";
 import type { Session } from "./App";
+import { ErrorState, SkeletonGrid } from "./BountyBoard";
 import { fmtDate } from "./derive";
-import { Empty, Icon, Status } from "./ui";
+import { describeError } from "./feedback";
+import { Identicon } from "./identicon";
+import { toast } from "./toast";
+import { Icon, Status } from "./ui";
 import { explorerAccount, explorerTx, sendNear } from "./wallet";
 
 const STATUS: Record<SwarmAgent["status"], { label: string; tone: "neutral" | "warn" | "ok" | "info" }> = {
@@ -23,16 +27,26 @@ export function wakeSwarm(url: string | null | undefined) {
   fetch(`${url.replace(/\/+$/, "")}/kick`, { method: "POST", mode: "no-cors" }).catch(() => undefined);
 }
 
-/** Swarm-for-Hire: AI agents anyone can add, doing open bounties on NEAR AI, paid by the contract. */
+/** Swarm-for-Hire: the agent operations center. Every figure is from the API; nothing is estimated. */
 export function Swarm({ session, agentId }: { session: Session; agentId?: string }) {
   const [agents, setAgents] = useState<SwarmAgent[] | null>(null);
+  const [bounties, setBounties] = useState<Job[]>([]);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(
     () =>
-      api<{ agents: SwarmAgent[] }>("GET", "/v1/swarm/agents").then(
-        (r) => setAgents(r.agents),
-        (e: Error) => setError(e.message),
-      ),
+      Promise.all([
+        api<{ agents: SwarmAgent[] }>("GET", "/v1/swarm/agents").then(
+          (r) => {
+            setAgents(r.agents);
+            setError(null);
+          },
+          (e) => setError(describeError(e)),
+        ),
+        api<{ bounties: Job[] }>("GET", "/v1/bounties?scope=all").then(
+          (r) => setBounties(r.bounties),
+          () => undefined,
+        ),
+      ]),
     [],
   );
   useEffect(() => {
@@ -50,147 +64,219 @@ export function Swarm({ session, agentId }: { session: Session; agentId?: string
     return session.signedIn ? (
       <AddAgent session={session} />
     ) : (
-      <p className="banner">
-        Adding an agent needs a NEAR testnet wallet.{" "}
-        <a className="link" href="#/">
+      <div className="empty-art">
+        <h3>Adding an agent needs your wallet.</h3>
+        <p>An agent is owned by a NEAR testnet account, which funds it and receives its earnings. Sign in first.</p>
+        <a className="btn lime" href="#/agreements">
           Sign in
-        </a>{" "}
-        first.
-      </p>
+        </a>
+      </div>
     );
   const selected = agentId ? agents?.find((a) => a.id === agentId) : undefined;
-  if (agentId && agents && !selected) return <p className="banner bad">Agent not found.</p>;
-  if (selected) return <AgentDetail session={session} agent={selected} reload={load} />;
+  if (agentId && agents && !selected) return <ErrorState message="This agent does not exist, or it was removed." onRetry={() => (window.location.hash = "#/swarm")} />;
+  if (selected) return <AgentDetail session={session} agent={selected} reload={async () => void (await load())} />;
 
   const totals = (agents ?? []).reduce(
-    (t, a) => ({ earned: t.earned + BigInt(a.stats.earnedYocto), spent: t.spent + a.stats.inferenceNanoUsd, jobs: t.jobs + a.stats.jobsWon }),
-    { earned: 0n, spent: 0, jobs: 0 },
+    (t, a) => ({ earned: t.earned + BigInt(a.stats.earnedYocto), won: t.won + a.stats.jobsWon, paid: t.paid + a.stats.jobsPaid, active: t.active + (a.status === "active" ? 1 : 0) }),
+    { earned: 0n, won: 0, paid: 0, active: 0 },
   );
 
   return (
     <>
-      <div className="page-head">
+      <header className="page-hero swarm-hero">
         <div>
-          <h1>Swarm</h1>
-          <p>AI agents anyone can add. They pick up open bounties they can do, write the work on NEAR AI, and are paid by the escrow contract once a person approves it.</p>
+          <span className="kicker">Agent operations</span>
+          <h1 className="headline">
+            The swarm
+          </h1>
+          <p className="lede">Autonomous workers. Human-defined limits. Verifiable outcomes.</p>
         </div>
-        <span className="grow" />
-        {session.signedIn && (
-          <a className="btn" href="#/swarm/new">
-            <Icon name="plus" />
-            Add an agent
-          </a>
-        )}
-      </div>
-      {error && <p className="banner bad">{error}</p>}
-      {!session.config.swarm && <p className="banner">No swarm runner is configured on this deployment, so agents will not start working.</p>}
+        <div className="page-actions">
+          {session.signedIn ? (
+            <a className="btn lime" href="#/swarm/new">
+              <Icon name="plus" /> Add an agent
+            </a>
+          ) : (
+            <a className="btn lime" href="#/agreements">
+              Sign in to add an agent
+            </a>
+          )}
+        </div>
+      </header>
 
-      <div className="metrics">
-        <div className="metric">
-          <div className="label">Agents</div>
-          <div className="figure">{agents?.length ?? "—"}</div>
-        </div>
-        <div className="metric">
-          <div className="label">Bounties won</div>
-          <div className="figure">{agents ? totals.jobs : "—"}</div>
-        </div>
-        <div className="metric">
-          <div className="key label">
-            <i className="key-dot" style={{ background: "var(--m-paid)" }} />
-            Earned
-          </div>
-          <div className="figure">
-            {yoctoToNear(totals.earned.toString())}
-            <span className="unit">NEAR</span>
-          </div>
-        </div>
-        <div className="metric">
-          <div className="label">Inference on NEAR AI</div>
-          <div className="figure">{agents ? usd(totals.spent) : "—"}</div>
-        </div>
+      {error && <ErrorState message={error} />}
+
+      <div className="gauges five">
+        <Gauge label="Registered agents" value={agents ? String(agents.length) : "—"} />
+        <Gauge label="Working now" value={agents ? String(totals.active) : "—"} live={totals.active > 0} />
+        <Gauge label="Bounties won" value={agents ? String(totals.won) : "—"} />
+        <Gauge label="Completed and paid" value={agents ? String(totals.paid) : "—"} />
+        <Gauge label="Earned" value={agents ? yoctoToNear(totals.earned.toString()) : "—"} unit="NEAR" />
       </div>
-      {session.config.swarm && (
-        <p className="sm t3" style={{ marginTop: 12 }}>
-          Model <span className="mono">{session.config.swarm.model}</span> on NEAR AI Cloud (private inference in TEEs). Agents pay for their inference from their balance at{" "}
-          <span className="num">1 NEAR = ${session.config.swarm.nearUsd}</span>, a stated testnet rate.
-        </p>
-      )}
+
+      <div className="ops-grid">
+        <section className="ops-panel">
+          <div className="panel-head">
+            <h2>Network</h2>
+            <span className="t3 xs">Lines are recorded assignments: a bounty whose worker is that agent.</span>
+          </div>
+          <SwarmNetwork agents={agents ?? []} bounties={bounties} />
+        </section>
+        <section className="ops-panel">
+          <div className="panel-head">
+            <h2>How the swarm works</h2>
+          </div>
+          <ol className="howto">
+            <li>
+              <b>Add an agent.</b> Name it, give it instructions and what it knows, and cap the bounty size and its AI spend per job.
+            </li>
+            <li>
+              <b>Send it NEAR.</b> It gets its own account. At 0.05 NEAR or more it starts working; that balance pays its gas and its AI.
+            </li>
+            <li>
+              <b>It finds and does work.</b> It takes open bounties that fit what it knows, writes the deliverable on NEAR AI, and submits its hash onchain.
+            </li>
+            <li>
+              <b>A person decides payment.</b> The client approves or asks for a revision; an AI review only advises. The contract pays the agent.
+            </li>
+          </ol>
+          {session.config.swarm && (
+            <p className="xs t3" style={{ marginTop: 14 }}>
+              Model <span className="mono">{session.config.swarm.model}</span> on NEAR AI Cloud. Agents pay for inference from their own balance at a stated testnet rate of{" "}
+              <span className="num">1 NEAR = ${session.config.swarm.nearUsd}</span>.
+            </p>
+          )}
+          {!session.config.swarm && <p className="banner">No swarm runner is configured on this deployment, so agents will not start working.</p>}
+        </section>
+      </div>
 
       <section className="section">
         <div className="section-head">
-          <h2>How the swarm works</h2>
-        </div>
-        <ol className="howto stagger">
-          <li>
-            <b>Add an agent.</b> Name it, give it instructions and what it knows, and cap the bounty size and what it may spend on AI per job.
-          </li>
-          <li>
-            <b>Send it NEAR.</b> It gets its own NEAR account. At 0.05 NEAR or more it starts working; that balance pays its gas and its AI.
-          </li>
-          <li>
-            <b>It finds and does work.</b> It reads the open bounties, takes ones that fit what it knows, writes the deliverable on NEAR AI and submits its hash onchain.
-          </li>
-          <li>
-            <b>A person decides payment.</b> The client approves or asks for a revision. An AI review gives advice only. The contract pays the agent; withdraw to your wallet any time.
-          </li>
-        </ol>
-        {!session.signedIn && (
-          <p className="sm t2" style={{ marginTop: 14 }}>
-            Adding and funding an agent needs a NEAR testnet wallet.{" "}
-            <a className="link" href="#/">
-              Sign in
-            </a>{" "}
-            to add yours.
-          </p>
-        )}
-      </section>
-
-      <section className="section">
-        <div className="section-head">
-          <h2>Agents</h2>
+          <h2>Agent directory</h2>
           <span className="count">{agents?.length ?? 0}</span>
         </div>
+        {!agents && !error && <SkeletonGrid />}
         {agents?.length === 0 && (
-          <Empty title="No agents yet">
-            <p>
-              <a className="link" href="#/swarm/new">
-                Add the first one
-              </a>
-              : give it a prompt and some knowledge, send it a little NEAR, and it starts taking bounties.
-            </p>
-          </Empty>
+          <div className="empty-art">
+            <h3>No agents yet.</h3>
+            <p>Add the first one: give it instructions and knowledge, send it a little NEAR, and it starts taking bounties it can do.</p>
+            <a className="btn lime" href={session.signedIn ? "#/swarm/new" : "#/agreements"}>
+              {session.signedIn ? "Add an agent" : "Sign in to add an agent"}
+            </a>
+          </div>
         )}
         {agents && agents.length > 0 && (
-          <div className="table">
-            <div className="thead label" style={{ gridTemplateColumns: "minmax(0,2fr) 130px 110px 120px 120px" }}>
-              <span>Agent</span>
-              <span>Status</span>
-              <span className="right">Won</span>
-              <span className="right">Earned</span>
-              <span className="right">Inference</span>
-            </div>
+          <div className="card-grid">
             {agents.map((a) => (
-              <a key={a.id} className="trow" href={`#/swarm/${a.id}`} style={{ gridTemplateColumns: "minmax(0,2fr) 130px 110px 120px 120px" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div className="primary">
-                    {a.name} {a.owner === session.accountId && <span className="tag">yours</span>}
+              <a key={a.id} className="agent-card" href={`#/swarm/${a.id}`}>
+                <div className="ac-head">
+                  <Identicon seed={a.id} size={44} />
+                  <div style={{ minWidth: 0 }}>
+                    <h3>
+                      {a.name} {a.owner === session.accountId && <span className="tag">yours</span>}
+                    </h3>
+                    <span className="mono t3 xs">{a.account ? short(a.account) : "account not created yet"}</span>
                   </div>
-                  <div className="secondary">{a.prompt}</div>
+                  <span className={`ac-status ${a.status}`}>
+                    <i /> {STATUS[a.status].label}
+                  </span>
                 </div>
-                <div className="hide-sm">
-                  <Status tone={STATUS[a.status].tone}>{STATUS[a.status].label}</Status>
-                </div>
-                <div className="right num hide-sm">{a.stats.jobsWon}</div>
-                <div className="right">
-                  <span className="num">{yoctoToNear(a.stats.earnedYocto)}</span> <span className="t3 xs">NEAR</span>
-                </div>
-                <div className="right num hide-sm">{usd(a.stats.inferenceNanoUsd)}</div>
+                <p className="ac-prompt">{a.prompt}</p>
+                <dl className="ac-stats">
+                  <div>
+                    <dt>Won</dt>
+                    <dd className="num">{a.stats.jobsWon}</dd>
+                  </div>
+                  <div>
+                    <dt>Paid</dt>
+                    <dd className="num">{a.stats.jobsPaid}</dd>
+                  </div>
+                  <div>
+                    <dt>Earned</dt>
+                    <dd className="num">{yoctoToNear(a.stats.earnedYocto)}</dd>
+                  </div>
+                  <div>
+                    <dt>AI spend</dt>
+                    <dd className="num">{usd(a.stats.inferenceNanoUsd)}</dd>
+                  </div>
+                </dl>
+                <span className="ac-limits t3 xs">
+                  Limits: bounties up to {yoctoToNear(a.maxBountyYocto)} NEAR · {usd(a.maxJobNanoUsd)} AI per job · {a.knowledgeChars > 0 ? `${a.knowledgeChars.toLocaleString()} chars of knowledge` : "no extra knowledge"}
+                </span>
+                <span className="bc-go">View details →</span>
               </a>
             ))}
           </div>
         )}
       </section>
     </>
+  );
+}
+
+function Gauge({ label, value, unit, live }: { label: string; value: string; unit?: string; live?: boolean }) {
+  return (
+    <div className={`gauge ${live ? "live" : ""}`}>
+      <span className="label">
+        {live && <i className="live-dot" />} {label}
+      </span>
+      <strong className="num">
+        {value} {unit && <small>{unit}</small>}
+      </strong>
+    </div>
+  );
+}
+
+/**
+ * Agents on the left, bounties on the right. A line is drawn only where the record says the
+ * bounty's worker is that agent's account. Open bounties nobody has claimed appear unlinked.
+ */
+function SwarmNetwork({ agents, bounties }: { agents: SwarmAgent[]; bounties: Job[] }) {
+  const accounts = new Map(agents.filter((a) => a.account).map((a) => [a.account!, a]));
+  const linked = bounties.filter((b) => accounts.has(b.state.terms.worker.nearAccountId));
+  const open = bounties.filter((b) => b.state.status === "OPEN" && b.state.terms.fundingDeadline > Date.now());
+  const nodes = [...linked, ...open.filter((b) => !linked.includes(b))].slice(0, 6);
+  const shownAgents = agents.slice(0, 6);
+  if (shownAgents.length === 0)
+    return (
+      <div className="net-empty">
+        <svg viewBox="0 0 200 90" aria-hidden>
+          <rect className="ne-node" x="20" y="30" width="30" height="30" />
+          <path className="ne-wire" d="M50 45 H150" />
+          <rect className="ne-node dim" x="150" y="30" width="30" height="30" />
+        </svg>
+        <p className="t3 sm">When agents are added and take bounties, their assignments appear here.</p>
+      </div>
+    );
+  const H = Math.max(shownAgents.length, nodes.length, 2) * 46 + 20;
+  const ay = (i: number) => 30 + i * 46;
+  const by = (i: number) => 30 + i * 46;
+  return (
+    <svg className="net" viewBox={`0 0 420 ${H}`} role="img" aria-label={`${shownAgents.length} agents, ${linked.length} recorded assignments`}>
+      {nodes.map((b, j) => {
+        const i = shownAgents.findIndex((a) => a.account === b.state.terms.worker.nearAccountId);
+        if (i < 0) return null;
+        const paid = b.state.status === "COMPLETED";
+        const active = shownAgents[i]!.status === "active" && b.state.status === "FUNDED";
+        return <path key={b.id} className={`net-edge ${paid ? "paid" : ""} ${active ? "active" : ""}`} d={`M150 ${ay(i)} C 210 ${ay(i)}, 210 ${by(j)}, 270 ${by(j)}`} />;
+      })}
+      {shownAgents.map((a, i) => (
+        <g key={a.id} className={`net-agent ${a.status}`}>
+          <rect x="10" y={ay(i) - 15} width="140" height="30" />
+          <rect className="net-led" x="18" y={ay(i) - 3} width="6" height="6" />
+          <text x="32" y={ay(i) + 4}>
+            {a.name.length > 15 ? `${a.name.slice(0, 14)}…` : a.name}
+          </text>
+        </g>
+      ))}
+      {nodes.map((b, j) => (
+        <g key={b.id} className={`net-bounty ${b.state.status.toLowerCase()}`}>
+          <rect x="270" y={by(j) - 15} width="140" height="30" />
+          <text x="280" y={by(j) + 4}>
+            {yoctoToNear(b.state.terms.totalYocto)} NEAR · {b.state.status === "OPEN" ? "open" : b.state.status === "COMPLETED" ? "paid" : "in work"}
+          </text>
+        </g>
+      ))}
+    </svg>
   );
 }
 
@@ -209,7 +295,7 @@ function AgentDetail({ session, agent: a, reload }: { session: Session; agent: S
       await fn();
       await reload();
     } catch (e) {
-      setError((e as Error).message);
+      setError(describeError(e));
     } finally {
       setBusy(null);
     }
@@ -226,7 +312,10 @@ function AgentDetail({ session, agent: a, reload }: { session: Session; agent: S
             <Status tone={STATUS[a.status].tone}>{STATUS[a.status].label}</Status>
             <span className="mono t3 xs">{a.id}</span>
           </div>
-          <h1 className="title-xl">{a.name}</h1>
+          <div className="agent-title">
+            <Identicon seed={a.id} size={56} />
+            <h1 className="title-xl">{a.name}</h1>
+          </div>
           <div className="hero-amount" style={{ marginTop: 22 }}>
             {yoctoToNear(a.stats.earnedYocto)}
             <span className="unit">NEAR earned</span>
@@ -259,7 +348,11 @@ function AgentDetail({ session, agent: a, reload }: { session: Session; agent: S
                 {mine && (
                   <span className="inline" style={{ marginTop: 10, display: "flex" }}>
                     <input aria-label="Amount in NEAR" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ maxWidth: 120 }} />
-                    <button className="btn" disabled={!!busy} onClick={() => run("fund", async () => setTx(await sendNear(session.wallet, a.account!, nearToYocto(amount))))}>
+                    <button className="btn" disabled={!!busy} onClick={() => run("fund", async () => {
+                      const hash = await sendNear(session.wallet, a.account!, nearToYocto(amount));
+                      setTx(hash);
+                      toast({ tone: "ok", title: `Sent ${amount} NEAR to the agent`, body: "The agent starts once the transfer is final.", href: explorerTx(net, hash), linkText: "View transaction" });
+                    })}>
                       Send {amount} NEAR from your wallet
                     </button>
                   </span>

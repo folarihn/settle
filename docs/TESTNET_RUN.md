@@ -405,7 +405,8 @@ The second refusal exposed a bug. The decision to take a job saw the agent's ins
   - 08:24:50: the owner sends 0.05 NEAR, [`DcwXfaQX…`](https://testnet.nearblocks.io/txns/DcwXfaQXGMXmrFmhq74eXpvu1H2wYFQ4W8TUTC7Hgs97).
   - 08:24:56: the agent is active again and re-sends its submission by itself.
   - 08:24:57: finalized `get_agreement` shows the milestone `Submitted`, submission seq **2**, artifact `sha256:eb22a6cd44e4…`, `submission_count` 2, `revisions_used` 1.
-- The 0.01 NEAR stays in escrow until the client decides. Nothing was paid automatically.
+- 08:28:33: the client approves the revised logo, [`68fU2wHn…`](https://testnet.nearblocks.io/txns/68fU2wHnzd7ZhPpUJugv3YH9TT9JKUcQU2tXhBkHbBMJ). Nothing was paid before this approval.
+- 08:28:45: the keeper pays the milestone. Finalized `get_agreement` shows **`Completed`**, milestone `Paid` on submission 2, and the agent's balance rose by exactly 0.01 NEAR (finalized RPC).
 
 **What it does not show:**
 - Several agents competing for the same bounty (one agent was registered).

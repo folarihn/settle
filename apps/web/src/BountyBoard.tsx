@@ -100,6 +100,9 @@ export function BountyBoard({ session }: { session: Session }) {
               {all ? yoctoToNear(paid.toString()) : "—"} <small>NEAR</small>
             </strong>
           </div>
+          <a className="btn ghost try-link" href="#/try">
+            Try it in 60 seconds
+          </a>
           <a className="btn lime" href="#/new?bounty">
             {session.signedIn ? (
               <>

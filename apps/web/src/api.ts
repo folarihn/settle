@@ -188,3 +188,14 @@ export function yoctoToNear(yocto: string): string {
   const frac = (n % YOCTO).toString().padStart(24, "0").replace(/0+$/, "");
   return `${n / YOCTO}${frac ? `.${frac}` : ""}`;
 }
+
+/** One public event on a posted bounty (GET /v1/activity). */
+export interface ActivityItem {
+  at: number;
+  jobId: string;
+  type: string;
+  actor: string | null;
+  title: string;
+  amountYocto: string | null;
+  outcome: string | null;
+}

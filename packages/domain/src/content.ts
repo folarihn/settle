@@ -94,7 +94,7 @@ export function describeContentRules(plan: ContentRulesPlan): string[] {
   if (plan.minWords !== undefined && plan.maxWords !== undefined) out.push(`Between ${plan.minWords} and ${plan.maxWords} words.`);
   else if (plan.minWords !== undefined) out.push(`At least ${plan.minWords} words.`);
   else if (plan.maxWords !== undefined) out.push(`At most ${plan.maxWords} words.`);
-  if (plan.minHeadings !== undefined) out.push(`At least ${plan.minHeadings} Markdown headings (lines starting with #).`);
+  if (plan.minHeadings !== undefined) out.push(`At least ${plan.minHeadings} Markdown heading${plan.minHeadings === 1 ? "" : "s"} (lines starting with #).`);
   for (const p of plan.mustInclude ?? []) out.push(`Must include the phrase "${p}".`);
   for (const p of plan.mustNotInclude ?? []) out.push(`Must not include "${p}".`);
   for (const a of plan.assertions ?? []) out.push(a.op === "exists" ? `JSON must have ${a.path}.` : a.op === "type" ? `JSON ${a.path} must be ${a.type === "array" ? "an array" : `a ${a.type}`}.` : `JSON ${a.path} must equal ${JSON.stringify(a.value)}.`);

@@ -59,6 +59,20 @@ export const CreateJobInput = z
  */
 const CHAIN_ONLY = new Set(["FUND", "START_PAYOUT", "CLAIM_BOUNTY", "CANCEL_BOUNTY"]);
 
+/** One public event on a posted bounty, for the live activity feed (ADR 0007: bounties only). */
+export interface ActivityItem {
+  at: number;
+  jobId: string;
+  type: string;
+  /** The account that acted; null for steps the contract performed. */
+  actor: string | null;
+  title: string;
+  amountYocto: string | null;
+  outcome: string | null;
+}
+
+const ACTIVITY_TYPES = ["FUND", "CLAIM_BOUNTY", "SUBMIT", "RECORD_VERIFICATION", "APPROVE", "REQUEST_REVISION", "CONFIRM_PAYOUT", "CANCEL_BOUNTY"];
+
 export interface JobView {
   id: string;
   version: number;
@@ -156,6 +170,31 @@ export class JobService {
       "SELECT state FROM jobs WHERE state->'terms'->>'openBounty' = 'true' AND state->>'status' <> 'DRAFT' ORDER BY updated_at DESC LIMIT 100",
     );
     return rows.map((r) => this.view(r.state, p?.accountId ?? ""));
+  }
+
+  /** Recent events on posted bounties, newest first. Direct agreements and drafts never appear. */
+  async activity(limit: number): Promise<ActivityItem[]> {
+    const { rows } = await this.db.query<{ job_id: string; type: string; actor: string; event: Record<string, unknown>; at: string; state: AgreementState }>(
+      `SELECT e.job_id, e.type, e.actor, e.event, e.at, j.state
+         FROM job_events e JOIN jobs j ON j.id = e.job_id
+        WHERE j.state->'terms'->>'openBounty' = 'true' AND j.state->>'status' <> 'DRAFT'
+          AND e.type IN (${ACTIVITY_TYPES.map((t) => `'${t}'`).join(", ")})
+        ORDER BY e.at DESC, e.version DESC
+        LIMIT $1`,
+      [limit],
+    );
+    return rows.map((r) => {
+      const t = r.state.terms;
+      const msId = typeof r.event.milestoneId === "string" ? r.event.milestoneId : null;
+      const i = msId ? t.milestones.findIndex((m) => m.id === msId) : -1;
+      const title = i >= 0 ? t.milestones[i]!.title : t.milestones.map((m) => m.title).join(" · ");
+      let amountYocto: string | null = null;
+      if (r.type === "FUND") amountYocto = typeof r.event.amountYocto === "string" ? r.event.amountYocto : t.totalYocto;
+      if (r.type === "CONFIRM_PAYOUT" && r.event.succeeded === true && i >= 0) amountYocto = r.state.milestones[i]!.allocation?.workerYocto ?? t.milestones[i]!.amountYocto;
+      const report = r.event.report as { outcome?: unknown } | undefined;
+      const outcome = r.type === "RECORD_VERIFICATION" && typeof report?.outcome === "string" ? report.outcome : r.type === "CONFIRM_PAYOUT" ? (r.event.succeeded === true ? "PAID" : "FAILED") : null;
+      return { at: Number(r.at), jobId: r.job_id, type: r.type, actor: r.actor === "chain" ? null : r.actor, title, amountYocto, outcome };
+    });
   }
 
   async events(p: Principal | null, jobId: string) {

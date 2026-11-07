@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { HttpVerificationPlan, JsonAssertion, VerificationOutcome } from "@settle/domain";
+import { checkJsonAssertion, type HttpVerificationPlan, type VerificationOutcome } from "@settle/domain";
 import { sendRequest, TransportError, type HttpResponse } from "./http.js";
 import { buildTargetUrl, DEFAULT_POLICY, resolvePinned, systemResolver, TargetRejected, type NetworkPolicy, type Resolver } from "./policy.js";
 
@@ -24,6 +24,8 @@ export interface RunResult {
   probes?: { at: number; outcome: VerificationOutcome; status: number | null; latencyMs: number | null }[];
   /** GitHub plans: what was checked. */
   github?: { repo: string; commit: string; branch: string; onBranch: boolean | null };
+  /** Content plans: where the deliverable bytes were read from. */
+  content?: { source: "settle-store" | "url" };
 }
 
 export interface RunDeps {
@@ -36,6 +38,8 @@ export interface RunDeps {
   githubToken?: string;
   /** GitHub API origin; tests point it at a local server. */
   githubApiBase?: string;
+  /** Content plans: reads a deliverable from SETTLE's content-addressed store (null if absent). */
+  loadContent?: (hash: string) => Promise<string | null>;
 }
 
 /**
@@ -159,48 +163,9 @@ function evaluate(plan: HttpVerificationPlan, res: HttpResponse): CheckResult[] 
     checks.push({ check: "json body", ok: false, detail: "response body is not valid JSON" });
     return checks;
   }
-  for (const a of plan.assertions) checks.push(checkAssertion(a, json));
+  for (const a of plan.assertions) checks.push(checkJsonAssertion(a, json));
   return checks;
 }
 
-function checkAssertion(a: JsonAssertion, root: unknown): CheckResult {
-  const found = readPath(root, a.path);
-  const actual = found.exists ? preview(found.value) : "missing";
-  switch (a.op) {
-    case "exists":
-      return { check: `${a.path} exists`, ok: found.exists, detail: actual };
-    case "equals":
-      return { check: `${a.path} == ${preview(a.value)}`, ok: found.exists && found.value === a.value, detail: `got ${actual}` };
-    case "type":
-      return { check: `${a.path} is ${a.type}`, ok: found.exists && typeOf(found.value) === a.type, detail: `got ${found.exists ? typeOf(found.value) : "missing"}` };
-  }
-}
-
-/** Evaluates `$`, `$.field`, `$.list[0].field` (the only forms plans may use). Own properties only. */
-export function readPath(root: unknown, path: string): { exists: boolean; value?: unknown } {
-  let current: unknown = root;
-  for (const [, key, index] of path.slice(1).matchAll(/\.([A-Za-z_][A-Za-z0-9_]*)|\[(\d+)\]/g)) {
-    if (key !== undefined) {
-      if (current === null || typeof current !== "object" || Array.isArray(current) || !Object.hasOwn(current, key)) {
-        return { exists: false };
-      }
-      current = (current as Record<string, unknown>)[key];
-    } else {
-      const i = Number(index);
-      if (!Array.isArray(current) || i >= current.length) return { exists: false };
-      current = current[i];
-    }
-  }
-  return { exists: true, value: current };
-}
-
-function typeOf(v: unknown): string {
-  if (v === null) return "null";
-  if (Array.isArray(v)) return "array";
-  return typeof v;
-}
-
-function preview(v: unknown): string {
-  const s = JSON.stringify(v) ?? String(v);
-  return s.length > 200 ? `${s.slice(0, 200)}...` : s;
-}
+/** Kept for existing importers; the implementation is shared with content checks in @settle/domain. */
+export { readPath } from "@settle/domain";

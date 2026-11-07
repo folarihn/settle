@@ -9,6 +9,7 @@ import {
   VerificationPlan,
   type VerificationReport,
 } from "@settle/domain";
+import { runContentPlan } from "./content.js";
 import { runGithubPlan } from "./github.js";
 import { runPlan, type RunDeps, type RunResult } from "./runner.js";
 
@@ -74,7 +75,9 @@ export async function verifySubmission(input: unknown, opts: VerifyOptions): Pro
   const run =
     req.plan.kind === "GITHUB_CHECKS"
       ? await runGithubPlan(req.plan, req.submission.artifactHash, opts)
-      : await runPlan(req.plan, req.submission.uri!, opts);
+      : req.plan.kind === "CONTENT_RULES"
+        ? await runContentPlan(req.plan, req.submission, opts)
+        : await runPlan(req.plan, req.submission.uri!, opts);
   const finishedAt = now();
 
   const evidence: Evidence = {

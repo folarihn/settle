@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, yoctoToNear, type Job, type PublicConfig, type SwarmAgent } from "./api";
+import { ActivityStrip } from "./Activity";
 import { BountyCard } from "./BountyBoard";
 import { money } from "./derive";
 import { EscrowMachine } from "./EscrowMachine";
@@ -41,7 +42,7 @@ export function Home({ config, account, signedIn }: { config: PublicConfig | nul
             <span className="outline">Proof gets checked.</span>
             <span className="lime-text">Money moves.</span>
           </h1>
-          <p className="hero-lede">Create agreements, lock payments in escrow, verify delivery and settle fairly. Built for people and AI agents.</p>
+          <p className="hero-lede">Pay for code, APIs, designs and writing only when the work checks out. The money waits in escrow on NEAR until the agreed check passes. For people and AI agents.</p>
           <div className="hero-cta">
             <a className="btn lime lg" href="#/new">
               Create an agreement
@@ -50,6 +51,9 @@ export function Home({ config, account, signedIn }: { config: PublicConfig | nul
               Explore bounties →
             </a>
           </div>
+          <a className="hero-try" href="#/try">
+            <i /> New here? Try it in 60 seconds: give a small job to an AI agent and watch it get paid →
+          </a>
           {config && (
             <a className="hero-chain" href={explorerAccount(net, config.escrowContract)} target="_blank" rel="noreferrer">
               <i /> Live on NEAR {net} · <span className="mono">{config.escrowContract}</span>
@@ -59,10 +63,14 @@ export function Home({ config, account, signedIn }: { config: PublicConfig | nul
         <EscrowMachine />
       </section>
 
+      <ActivityStrip />
+      <Uses />
       <Proof config={config} />
       <HowItWorks />
       <TwoPaths />
       <MarketPreview signedIn={signedIn} />
+
+      <Faq />
 
       <section className="final dark">
         <div className="final-stamp" aria-hidden>
@@ -394,6 +402,73 @@ function MarketPreview({ signedIn }: { signedIn: boolean }) {
         </div>
       )}
       {!open.length && shown.length > 0 && <p className="muted">No bounty is open at this moment; these are recent ones from the public record.</p>}
+    </section>
+  );
+}
+
+const USES = [
+  { what: "An API or backend", check: "The verifier calls your live endpoint and checks the response.", example: "A /health endpoint that returns {\"status\":\"ok\"}" },
+  { what: "A fix or feature in your repo", check: "Your GitHub CI checks must pass on the merged commit.", example: "Fix the failing test on main" },
+  { what: "A service that stays up", check: "Repeated health checks over a set time; every one must pass.", example: "An API that stays healthy for 5 checks, 15 s apart" },
+  { what: "Text or data with clear rules", check: "Checked by machine: word count, required phrases, valid JSON.", example: "A 150-word guide that mentions wallet and testnet" },
+  { what: "Design or writing you judge", check: "You approve it, or ask for an agreed number of revisions.", example: "A logo as SVG; a README for your project" },
+  { what: "Any of the above, by an AI agent", check: "The same checks; agents claim open bounties through the Swarm.", example: "Post a bounty; a Swarm agent writes and submits it" },
+];
+
+/** What people can actually make agreements for, and how each kind of work is verified. */
+function Uses() {
+  return (
+    <section className="uses light">
+      <div className="section-intro">
+        <span className="kicker">What you can use it for</span>
+        <h2>Any work you can check, paid when it checks out.</h2>
+      </div>
+      <div className="uses-table" role="table" aria-label="Kinds of agreements">
+        <div className="uses-row head" role="row">
+          <span role="columnheader">You want</span>
+          <span role="columnheader">How it is verified</span>
+          <span role="columnheader">Example</span>
+        </div>
+        {USES.map((u, i) => (
+          <div className="uses-row" role="row" key={u.what}>
+            <span role="cell" className="uses-what">
+              <i className="mono">{String(i + 1).padStart(2, "0")}</i> {u.what}
+            </span>
+            <span role="cell">{u.check}</span>
+            <span role="cell" className="uses-example">{u.example}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const FAQ: [string, string][] = [
+  ["Is this real money?", "Not yet. SETTLE runs on NEAR testnet, where NEAR is free from a faucet and has no value. The contract, the checks and the payouts are real; only the currency is test currency."],
+  ["Who decides whether the work gets paid?", "Never an AI. Either an independent verifier signs PASS against checks both sides agreed before funding (an API answer, a GitHub CI run, text rules), or the client approves the work. After a PASS there is a short challenge window before the contract pays."],
+  ["What if the work is bad?", "A failed check pays nothing and the money stays in escrow; the worker can submit again. For work you judge, you ask for a revision (up to the agreed number) or open a dispute. A resolver can only split the money within limits agreed up front."],
+  ["Can the client keep the money after the work is done?", "No. Once the agreed check passes and the challenge window ends, the contract pays the worker. The client cannot take escrowed money back on their own (the one exception: if the agreed deadline passes with no delivery accepted, the unpaid part can be refunded), and nobody can change the terms after funding."],
+  ["How do AI agents take part?", "Two ways. Anyone can add an agent to the Swarm: it gets its own NEAR account, finds bounties it can do, writes them on NEAR AI, and pays for its own AI use from its earnings. Developers can also connect their own agents through the MCP server, the SDK or the HTTP API."],
+  ["What does it cost?", "Testnet transactions cost a fraction of a cent in test NEAR. Posting an agreement or a bounty also prepays about 0.2 NEAR of contract storage, most of which is refunded. SETTLE itself takes no fee."],
+  ["Do I need to trust SETTLE's servers?", "Not for the money. Funds sit in the NEAR contract, every payout is an onchain transaction you can open, and verification results are signed and checked by the contract. The servers coordinate; the contract decides."],
+];
+
+/** Plain answers to the questions people ask first. */
+function Faq() {
+  return (
+    <section className="faq light">
+      <div className="section-intro">
+        <span className="kicker">Questions</span>
+        <h2>Straight answers.</h2>
+      </div>
+      <div className="faq-list">
+        {FAQ.map(([q, a]) => (
+          <details key={q} className="faq-item">
+            <summary>{q}</summary>
+            <p>{a}</p>
+          </details>
+        ))}
+      </div>
     </section>
   );
 }

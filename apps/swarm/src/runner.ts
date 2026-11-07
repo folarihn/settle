@@ -1,6 +1,7 @@
 import type { JobView, SettleAgent } from "@settle/agent-sdk";
 import { backfillCosts, recordInference, type Db } from "@settle/api";
 import { SHORT_THINKING_TOKENS, worstCaseNanoUsd, type ChatMessage, type NearAi, type Pricing } from "@settle/near-ai";
+import { checkContent, ContentRulesPlan, describeContentRules } from "@settle/domain";
 import type { KeyPairString } from "near-api-js";
 import { decryptSecret, encryptSecret, newAgentKey } from "./keys.js";
 
@@ -58,13 +59,28 @@ interface AgentRow {
 const DELIVERABLE_TOKENS = 2000;
 const TRIAGE_TOKENS = 150;
 
+/** The milestone's auto-check rules, if it is written work checked by machine (CONTENT_RULES). */
+export function contentPlanOf(m: { type: string } & Record<string, unknown>): ContentRulesPlan | null {
+  if (m.type !== "AUTOMATED") return null;
+  const p = ContentRulesPlan.safeParse(m.verificationPlan);
+  return p.success ? p.data : null;
+}
+
+/** Model output as a deliverable: trimmed, and JSON without the code fences models like to add. */
+export function normalizeDeliverable(text: string, plan: ContentRulesPlan | null): string {
+  const t = text.trim();
+  if (plan?.format !== "json") return t;
+  const fenced = t.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/);
+  return (fenced ? fenced[1]! : t).trim();
+}
+
 /** Whether an agent may even consider a bounty. Pure: no network, no model. */
 export function screenBounty(b: JobView, maxBountyYocto: bigint, now: number): string | null {
   const t = b.state.terms;
   if (b.state.status !== "OPEN" || !b.calls.claimBounty) return "not claimable by this agent";
   if (BigInt(t.totalYocto) > maxBountyYocto) return "pays more than this agent's limit";
   if (t.fundingDeadline - now < 60_000) return "claim deadline too close";
-  if (t.milestones.some((m) => m.type !== "HUMAN_REVIEW")) return "has milestones that need a deployment or code, not writing";
+  if (t.milestones.some((m) => m.type !== "HUMAN_REVIEW" && !contentPlanOf(m))) return "has milestones that need a deployment or code, not writing";
   return null;
 }
 
@@ -204,7 +220,12 @@ export class SwarmRunner {
   /** The agent decides whether the work fits its skills. This decides only whether to claim; people decide payment. */
   private async triage(a: AgentRow, b: JobView): Promise<string | null> {
     const t = b.state.terms;
-    const brief = t.milestones.map((m) => `- ${m.title}\n  Acceptance: ${String(m.rubric ?? "")}`).join("\n");
+    const brief = t.milestones
+      .map((m) => {
+        const rules = contentPlanOf(m);
+        return rules ? `- ${m.title}\n  Checked automatically against: ${describeContentRules(rules).join(" ")}` : `- ${m.title}\n  Acceptance: ${String(m.rubric ?? "")}`;
+      })
+      .join("\n");
     const messages: ChatMessage[] = [
       {
         role: "system",
@@ -232,10 +253,14 @@ export class SwarmRunner {
   /** Writes the deliverable with NEAR AI, stores it content-addressed, and submits its hash. */
   private async deliver(a: AgentRow, agent: SettleAgent, job: JobView, milestoneId: string) {
     const terms = job.state.terms.milestones.find((m) => m.id === milestoneId);
-    if (!terms || terms.type !== "HUMAN_REVIEW") return;
+    const rules = terms ? contentPlanOf(terms) : null;
+    if (!terms || (terms.type !== "HUMAN_REVIEW" && !rules)) return;
     const ms = job.state.milestones.find((m) => m.id === milestoneId)!;
 
     let revision = "";
+    if (rules && ms.lastVerification?.outcome === "FAIL") {
+      revision = "\n\nYour previous delivery failed the automatic checks. Write it again so that every rule holds.";
+    }
     if (ms.status === "REVISION_REQUESTED") {
       const { events } = await agent.jobEvents(job.id);
       const ask = [...events].reverse().find((e) => e.type === "REQUEST_REVISION" && e.event.milestoneId === milestoneId);
@@ -248,9 +273,18 @@ export class SwarmRunner {
         content:
           `${a.prompt}\n\n` +
           (a.knowledge ? `Knowledge you may rely on:\n${a.knowledge.slice(0, 20_000)}\n\n` : "") +
-          "Write the complete deliverable in Markdown. Do not add commentary about yourself or the task; produce only the deliverable.",
+          (rules?.format === "json"
+            ? "Output only the JSON document itself: no code fences, no commentary."
+            : rules?.format === "text"
+              ? "Write the complete deliverable as plain text. Produce only the deliverable, with no commentary."
+              : "Write the complete deliverable in Markdown. Do not add commentary about yourself or the task; produce only the deliverable."),
       },
-      { role: "user", content: `Task: ${terms.title}\n\nAcceptance criteria (the client judges against these):\n${String(terms.rubric ?? "")}${revision}` },
+      {
+        role: "user",
+        content: rules
+          ? `Task: ${terms.title}\n\nA machine checks the delivery; every rule must hold or it is not paid:\n- ${describeContentRules(rules).join("\n- ")}${revision}`
+          : `Task: ${terms.title}\n\nAcceptance criteria (the client judges against these):\n${String(terms.rubric ?? "")}${revision}`,
+      },
     ];
 
     // Guardrail: never start a call that could push this job past the agent's inference limit.
@@ -266,9 +300,41 @@ export class SwarmRunner {
       this.d.log("empty answer; will retry", { agent: a.name, bounty: job.id });
       return;
     }
-    const d = await agent.createDeliverable(c.content, job.id);
+    let text = normalizeDeliverable(c.content, rules);
+
+    // Auto-checked work: check it with the verifier's own rules first, and fix it once if needed.
+    // A delivery that fails its own check is never submitted.
+    if (rules) {
+      let failed = checkContent(rules, text).filter((x) => !x.ok);
+      if (failed.length) {
+        const retry: ChatMessage[] = [
+          ...messages,
+          { role: "assistant", content: c.content },
+          { role: "user", content: `These checks failed: ${failed.map((x) => `${x.check} (${x.detail})`).join("; ")}. Write the complete deliverable again so every rule holds.` },
+        ];
+        const spentNow = await this.jobSpend(a.id, job.id);
+        if (spentNow + worstCaseNanoUsd(this.d.pricing, chars(retry), DELIVERABLE_TOKENS + SHORT_THINKING_TOKENS) > Number(a.max_job_nano_usd)) {
+          this.d.log("held: self-check failed and a fix would exceed the inference limit", { agent: a.name, bounty: job.id, failed: failed.map((x) => x.check) });
+          return;
+        }
+        const c2 = await this.d.ai.chat(retry, { maxTokens: DELIVERABLE_TOKENS, temperature: 0.2, reasoning: "short" });
+        await recordInference(this.d.db, c2, "deliverable", { agentId: a.id, jobId: job.id, milestoneId }, this.now());
+        text = normalizeDeliverable(c2.content, rules);
+        failed = checkContent(rules, text).filter((x) => !x.ok);
+        if (failed.length) {
+          this.d.log("not submitting: self-check still fails", { agent: a.name, bounty: job.id, failed: failed.map((x) => x.check) });
+          return;
+        }
+      }
+    }
+
+    const d = await agent.createDeliverable(text, job.id);
     const sub = await agent.actOnChain(job.id, { type: "SUBMIT", milestoneId, artifactHash: d.hash, uri: `${this.d.publicUrl}${d.url}` });
     this.d.log("submitted", { agent: a.name, bounty: job.id, milestone: milestoneId, deliverable: d.hash.slice(0, 19), tx: sub.txHash });
+    if (rules) {
+      const v = await agent.requestVerification(job.id, milestoneId);
+      this.d.log("verification requested", { agent: a.name, bounty: job.id, milestone: milestoneId, verification: (v as { id?: string }).id ?? null });
+    }
   }
 
   /** Known cost of this agent's calls for a job, plus a worst-case figure for calls not yet billed. */

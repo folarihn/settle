@@ -212,6 +212,13 @@ describe("new agreement form", () => {
     workTitle: "A 300-word quickstart",
     brief: "Numbered steps, under 300 words.",
     workNear: "0.02",
+    autoFormat: "markdown" as const,
+    minWords: "",
+    maxWords: "",
+    mustInclude: "",
+    mustNotInclude: "",
+    minHeadings: "",
+    maxBytes: "",
     apiNear: "0.35",
     designNear: "0.15",
     floorNear: "",
@@ -258,5 +265,89 @@ describe("new agreement form", () => {
       ["design", "HUMAN_REVIEW"],
     ]);
     expect(req.totalYocto).toBe("500000000000000000000000");
+  });
+});
+
+describe("auto-checked text form", () => {
+  const form = {
+    template: "auto-text" as const,
+    openBounty: true,
+    worker: "",
+    workerKind: "AGENT" as const,
+    workTitle: "A 150-word claim guide",
+    brief: "",
+    workNear: "0.02",
+    autoFormat: "markdown" as const,
+    minWords: "50",
+    maxWords: "300",
+    mustInclude: "wallet, testnet",
+    mustNotInclude: "",
+    minHeadings: "1",
+    maxBytes: "",
+    apiNear: "0.35",
+    designNear: "0.15",
+    floorNear: "",
+    revisions: 2,
+    challengeMin: 2,
+    deadlineHours: 24,
+    expiresDays: 7,
+    plan: "{}",
+    probes: 5,
+    probeIntervalSec: 15,
+    repo: "",
+    branch: "main",
+    checks: "test",
+    rubric: "",
+  };
+
+  it("builds one automated milestone with a CONTENT_RULES plan, omitting empty rules", async () => {
+    const { buildAgreement, swarmCanTake } = await import("./agreementForm");
+    const req = buildAgreement(form, 0);
+    expect(req.milestones).toEqual([
+      {
+        id: "work",
+        title: "A 150-word claim guide",
+        type: "AUTOMATED",
+        amountYocto: "20000000000000000000000",
+        verificationPlan: { kind: "CONTENT_RULES", version: 1, format: "markdown", maxBytes: 8000, minWords: 50, maxWords: 300, mustInclude: ["wallet", "testnet"], minHeadings: 1 },
+      },
+    ]);
+    expect(swarmCanTake("auto-text", true)).toBe(true);
+  });
+
+  it("explains bad rules before anything is sent", async () => {
+    const { buildAgreement } = await import("./agreementForm");
+    expect(() => buildAgreement({ ...form, minWords: "400" }, 0)).toThrow(/cannot be more than maximum/);
+    expect(() => buildAgreement({ ...form, maxWords: "1.5" }, 0)).toThrow(/whole number/);
+    expect(() => buildAgreement({ ...form, maxBytes: "100000" }, 0)).toThrow(/Maximum size/);
+  });
+
+  it("describes the rules in plain words for people", async () => {
+    const { describeRules } = await import("./derive");
+    expect(describeRules({ kind: "CONTENT_RULES", format: "json", maxBytes: 500, mustInclude: ["id"] })).toEqual(["A JSON document, at most 500 bytes.", 'Includes "id".']);
+  });
+});
+
+describe("live activity wording", () => {
+  it("turns recorded events into short sentences with a tone", async () => {
+    const { describeActivity } = await import("./derive");
+    const base = { title: "Write a setup guide", amountYocto: null, outcome: null };
+    expect(describeActivity({ ...base, type: "CLAIM_BOUNTY", actor: "e58da65ddfc9a59c9471f98475b4973bbc64adaed531e8ad53d80c77a6f389a2" }).text).toBe("e58da6…89a2 claimed “Write a setup guide”");
+    expect(describeActivity({ ...base, type: "RECORD_VERIFICATION", actor: "verifier.testnet", outcome: "FAIL" })).toEqual({ text: "Verifier signed FAIL for “Write a setup guide”", tone: "bad" });
+    expect(describeActivity({ ...base, type: "CONFIRM_PAYOUT", actor: null, outcome: "PAID", amountYocto: "20000000000000000000000" })).toEqual({ text: "Contract paid 0.02 NEAR for “Write a setup guide”", tone: "ok" });
+    expect(describeActivity({ ...base, type: "FUND", actor: "client.testnet", amountYocto: "10000000000000000000000" }).text).toBe("client.testnet posted “Write a setup guide” · 0.01 NEAR in escrow");
+  });
+});
+
+describe("try it in 60 seconds", () => {
+  it("posts a small, auto-checked open bounty a Swarm agent can take", async () => {
+    const { TRY_BOUNTY } = await import("./TryIt");
+    const { buildAgreement, swarmCanTake } = await import("./agreementForm");
+    const req = buildAgreement(TRY_BOUNTY, 0);
+    expect(req).toMatchObject({ openBounty: true, totalYocto: "20000000000000000000000", challengePeriodSec: 120, fundingDeadline: 2 * 3600_000 });
+    expect(req.milestones[0]).toMatchObject({ type: "AUTOMATED", verificationPlan: { kind: "CONTENT_RULES", format: "markdown", minWords: 60, maxWords: 200, mustInclude: ["wallet", "testnet"], minHeadings: 1 } });
+    expect(swarmCanTake(TRY_BOUNTY.template, TRY_BOUNTY.openBounty)).toBe(true);
+    // Within the live Swarm agent's 0.05 NEAR limit.
+    expect(BigInt(req.totalYocto) <= 5n * 10n ** 22n).toBe(true);
   });
 });

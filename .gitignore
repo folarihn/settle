@@ -11,6 +11,7 @@ neardev/
 
 # Dev-only preview session for apps/web (see apps/web/vite.config.ts); never commit.
 .preview-session.json
+.vercel
 
 # Local Claude Code settings (preview launch configs); not part of the project.
 .claude/

@@ -6,7 +6,7 @@ import { fmtDate } from "./derive";
 import { describeError } from "./feedback";
 import { Identicon } from "./identicon";
 import { toast } from "./toast";
-import { Icon, Status } from "./ui";
+import { AgreementStatus, Icon, Status } from "./ui";
 import { explorerAccount, explorerTx, sendNear } from "./wallet";
 
 const STATUS: Record<SwarmAgent["status"], { label: string; tone: "neutral" | "warn" | "ok" | "info" }> = {
@@ -74,7 +74,7 @@ export function Swarm({ session, agentId }: { session: Session; agentId?: string
     );
   const selected = agentId ? agents?.find((a) => a.id === agentId) : undefined;
   if (agentId && agents && !selected) return <ErrorState message="This agent does not exist, or it was removed." onRetry={() => (window.location.hash = "#/swarm")} />;
-  if (selected) return <AgentDetail session={session} agent={selected} reload={async () => void (await load())} />;
+  if (selected) return <AgentDetail session={session} agent={selected} bounties={bounties} reload={async () => void (await load())} />;
 
   const totals = (agents ?? []).reduce(
     (t, a) => ({ earned: t.earned + BigInt(a.stats.earnedYocto), won: t.won + a.stats.jobsWon, paid: t.paid + a.stats.jobsPaid, active: t.active + (a.status === "active" ? 1 : 0) }),
@@ -92,6 +92,9 @@ export function Swarm({ session, agentId }: { session: Session; agentId?: string
           <p className="lede">Autonomous workers. Human-defined limits. Verifiable outcomes.</p>
         </div>
         <div className="page-actions">
+          <a className="btn ghost" href="#/try">
+            Give an agent a job
+          </a>
           {session.signedIn ? (
             <a className="btn lime" href="#/swarm/new">
               <Icon name="plus" /> Add an agent
@@ -280,7 +283,9 @@ function SwarmNetwork({ agents, bounties }: { agents: SwarmAgent[]; bounties: Jo
   );
 }
 
-function AgentDetail({ session, agent: a, reload }: { session: Session; agent: SwarmAgent; reload: () => Promise<void> }) {
+function AgentDetail({ session, agent: a, bounties, reload }: { session: Session; agent: SwarmAgent; bounties: Job[]; reload: () => Promise<void> }) {
+  const history = a.account ? bounties.filter((b) => b.state.terms.worker.nearAccountId === a.account) : [];
+  const successRate = a.stats.jobsWon > 0 ? Math.round((a.stats.jobsPaid / a.stats.jobsWon) * 100) : null;
   const [amount, setAmount] = useState("0.1");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -411,6 +416,46 @@ function AgentDetail({ session, agent: a, reload }: { session: Session; agent: S
 
           <section className="section">
             <div className="section-head">
+              <h2>Track record</h2>
+            </div>
+            <dl className="profile-stats">
+              <div>
+                <dt>Bounties won</dt>
+                <dd className="num">{a.stats.jobsWon}</dd>
+              </div>
+              <div>
+                <dt>Completed and paid</dt>
+                <dd className="num">{a.stats.jobsPaid}</dd>
+              </div>
+              <div>
+                <dt>Paid rate</dt>
+                <dd className="num">{successRate === null ? "—" : `${successRate}%`}</dd>
+              </div>
+              <div>
+                <dt>Active since</dt>
+                <dd>{fmtDate(a.createdAt)}</dd>
+              </div>
+            </dl>
+            {history.length === 0 ? (
+              <p className="muted">No bounties yet. Its work will be listed here as it takes them.</p>
+            ) : (
+              <div className="history">
+                {history.map((b) => {
+                  const paid = b.state.milestones.reduce((n, m) => n + (m.status === "PAID" && m.allocation ? BigInt(m.allocation.workerYocto) : 0n), 0n);
+                  return (
+                    <a key={b.id} className="history-row" href={`#/jobs/${b.id}`}>
+                      <span className="history-title">{b.state.terms.milestones.map((m) => m.title).join(" · ")}</span>
+                      <AgreementStatus status={b.state.status} />
+                      <span className="num right">{paid > 0n ? `+${yoctoToNear(paid.toString())} NEAR` : `${yoctoToNear(b.state.terms.totalYocto)} NEAR in escrow`}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="section">
+            <div className="section-head">
               <h2>Instructions</h2>
             </div>
             <p style={{ whiteSpace: "pre-wrap" }}>{a.prompt}</p>
@@ -457,7 +502,7 @@ function AgentDetail({ session, agent: a, reload }: { session: Session; agent: S
           <div className="block">
             <div className="label">Guardrails</div>
             <ul className="sm t2" style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-              <li>Takes only work a person judges (human review). No AI decides payment.</li>
+              <li>Takes only written work: judged by a person, or checked by machine against agreed rules. No AI decides payment.</li>
               <li>Never starts an inference call that could exceed its per-job limit.</li>
               <li>Every deliverable is stored by its SHA-256, which is what goes onchain.</li>
               <li>Testnet: the swarm runner holds this agent's key, encrypted. The owner can withdraw at any time.</li>

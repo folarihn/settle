@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, yoctoToNear, type Job } from "./api";
 import type { Session } from "./App";
-import { fmtDate, money, planKind, relTime } from "./derive";
+import { contentRules, describeRules, fmtDate, money, planKind, relTime } from "./derive";
 import { describeError } from "./feedback";
 import { wakeSwarm } from "./Swarm";
 import { AgreementStatus, Icon } from "./ui";
@@ -100,6 +100,9 @@ export function BountyBoard({ session }: { session: Session }) {
               {all ? yoctoToNear(paid.toString()) : "—"} <small>NEAR</small>
             </strong>
           </div>
+          <a className="btn ghost try-link" href="#/try">
+            Try it in 60 seconds
+          </a>
           <a className="btn lime" href="#/new?bounty">
             {session.signedIn ? (
               <>
@@ -175,7 +178,8 @@ function Select({ label, value, onChange, options }: { label: string; value: str
 export function BountyCard({ job: b, me }: { job: Job; me: string }) {
   const t = b.state.terms;
   const open = isOpen(b, Date.now());
-  const brief = t.milestones.find((m) => m.rubric)?.rubric;
+  const auto = t.milestones.map(contentRules).find((r) => r !== null);
+  const brief = t.milestones.find((m) => m.rubric)?.rubric ?? (auto ? `Checked automatically: ${describeRules(auto).join(" ")}` : undefined);
   const worker = t.worker.nearAccountId;
   const mine = !!me && t.client.nearAccountId === me;
   return (

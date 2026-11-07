@@ -76,6 +76,7 @@ export function planKind(terms: MilestoneTerms): string {
   if (terms.type === "HUMAN_REVIEW") return "Human review";
   const p = (terms.verificationPlan ?? {}) as { kind?: string; repeat?: unknown };
   if (p.kind === "GITHUB_CHECKS") return "GitHub CI";
+  if (p.kind === "CONTENT_RULES") return "Auto-checked text";
   return p.repeat ? "Sustained API check" : "API check";
 }
 
@@ -149,4 +150,66 @@ export function relTime(ms: number): string {
   const abs = Math.abs(d);
   const unit = abs < 60_000 ? [Math.round(abs / 1000), "s"] : abs < 3_600_000 ? [Math.round(abs / 60_000), "min"] : abs < 86_400_000 ? [Math.round(abs / 3_600_000), "h"] : [Math.round(abs / 86_400_000), "d"];
   return d >= 0 ? `${unit[0]} ${unit[1]} ago` : `in ${unit[0]} ${unit[1]}`;
+}
+
+/** A CONTENT_RULES plan as the API returns it (display only; the verifier and agents use @settle/domain). */
+export interface ContentRules {
+  kind: "CONTENT_RULES";
+  format: "text" | "markdown" | "json";
+  maxBytes: number;
+  minWords?: number;
+  maxWords?: number;
+  mustInclude?: string[];
+  mustNotInclude?: string[];
+  minHeadings?: number;
+  assertions?: { op: string; path: string; type?: string; value?: unknown }[];
+}
+
+export function contentRules(terms: MilestoneTerms): ContentRules | null {
+  const p = terms.verificationPlan as { kind?: string } | undefined;
+  return terms.type === "AUTOMATED" && p?.kind === "CONTENT_RULES" ? (p as ContentRules) : null;
+}
+
+/**
+ * The rules as plain sentences. Mirrors describeContentRules in @settle/domain, which is the
+ * wording agents receive; kept local so the web bundle stays free of the domain package.
+ */
+export function describeRules(r: ContentRules): string[] {
+  const out = [`${r.format === "json" ? "A JSON document" : r.format === "markdown" ? "Markdown" : "Plain text"}, at most ${r.maxBytes.toLocaleString("en-US")} bytes.`];
+  if (r.minWords !== undefined && r.maxWords !== undefined) out.push(`Between ${r.minWords} and ${r.maxWords} words.`);
+  else if (r.minWords !== undefined) out.push(`At least ${r.minWords} words.`);
+  else if (r.maxWords !== undefined) out.push(`At most ${r.maxWords} words.`);
+  if (r.minHeadings !== undefined) out.push(`At least ${r.minHeadings} heading${r.minHeadings === 1 ? "" : "s"}.`);
+  for (const p of r.mustInclude ?? []) out.push(`Includes "${p}".`);
+  for (const p of r.mustNotInclude ?? []) out.push(`Does not include "${p}".`);
+  for (const a of r.assertions ?? []) out.push(a.op === "exists" ? `JSON has ${a.path}.` : a.op === "type" ? `JSON ${a.path} is ${a.type}.` : `JSON ${a.path} equals ${JSON.stringify(a.value)}.`);
+  return out;
+}
+
+const who = (a: string | null) => (!a ? "The contract" : a.length > 22 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+const quote = (t: string) => `“${t.length > 48 ? `${t.slice(0, 46)}…` : t}”`;
+
+/** One activity event as a short sentence, from recorded data only. */
+export function describeActivity(e: { type: string; actor: string | null; title: string; amountYocto: string | null; outcome: string | null }): { text: string; tone: Tone } {
+  const amount = e.amountYocto ? `${near(e.amountYocto)} NEAR` : "";
+  switch (e.type) {
+    case "FUND":
+      return { text: `${who(e.actor)} posted ${quote(e.title)}${amount ? ` · ${amount} in escrow` : ""}`, tone: "info" };
+    case "CLAIM_BOUNTY":
+      return { text: `${who(e.actor)} claimed ${quote(e.title)}`, tone: "info" };
+    case "SUBMIT":
+      return { text: `${who(e.actor)} delivered ${quote(e.title)}`, tone: "neutral" };
+    case "RECORD_VERIFICATION":
+      return { text: `Verifier signed ${e.outcome ?? "a result"} for ${quote(e.title)}`, tone: e.outcome === "PASS" ? "ok" : "bad" };
+    case "APPROVE":
+      return { text: `${who(e.actor)} approved ${quote(e.title)}`, tone: "ok" };
+    case "REQUEST_REVISION":
+      return { text: `${who(e.actor)} asked for a revision of ${quote(e.title)}`, tone: "warn" };
+    case "CONFIRM_PAYOUT":
+      return e.outcome === "PAID" ? { text: `Contract paid ${amount || "the worker"} for ${quote(e.title)}`, tone: "ok" } : { text: `A payout for ${quote(e.title)} failed and stays claimable`, tone: "bad" };
+    case "CANCEL_BOUNTY":
+      return { text: `${quote(e.title)} was cancelled and refunded`, tone: "neutral" };
+    default:
+      return { text: `${who(e.actor)}: ${e.type.toLowerCase().replace(/_/g, " ")} on ${quote(e.title)}`, tone: "neutral" };
+  }
 }

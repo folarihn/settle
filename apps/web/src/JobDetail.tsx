@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, nearToYocto, yoctoToNear, type AiReview, type ChainSnapshot, type ContractCall, type Job, type Milestone, type MilestoneTerms, type Verification } from "./api";
 import type { Session } from "./App";
-import { fmtDate, isUnclaimedBounty, money, nextAction, planKind, title } from "./derive";
+import { contentRules, describeRules, fmtDate, isUnclaimedBounty, money, nextAction, planKind, title } from "./derive";
 import { describeError } from "./feedback";
 import { agreementStages } from "./stages";
 import { Timeline } from "./Timeline";
@@ -119,9 +119,11 @@ export function JobDetail({ session, jobId }: { session: Session; jobId: string 
     toast({ tone: "ok", title: `${label.replace(/_/g, " ")} confirmed onchain`, body: "The escrow contract has recorded it.", href: link, linkText: "View transaction" });
   };
 
-  const act = (label: string, action: Record<string, unknown>, after?: () => Promise<unknown>) =>
+  /** `prepare` runs first and adds fields to the action (e.g. storing a deliverable to get its hash). */
+  const act = (label: string, action: Record<string, unknown>, after?: () => Promise<unknown>, prepare?: () => Promise<Record<string, unknown>>) =>
     run(label, async () => {
-      const r = await api<{ contractCall: ContractCall | null }>("POST", `/v1/jobs/${jobId}/actions`, action);
+      const extra = prepare ? await prepare() : {};
+      const r = await api<{ contractCall: ContractCall | null }>("POST", `/v1/jobs/${jobId}/actions`, { ...action, ...extra });
       if (r.contractCall) await sign(label, r.contractCall);
       if (after) await after();
     });
@@ -413,7 +415,7 @@ interface CardProps {
   job: Job;
   verifications: Verification[];
   busy: boolean;
-  act: (label: string, action: Record<string, unknown>, after?: () => Promise<unknown>) => Promise<void>;
+  act: (label: string, action: Record<string, unknown>, after?: () => Promise<unknown>, prepare?: () => Promise<Record<string, unknown>>) => Promise<void>;
   signOnly: (label: string, call: ContractCall) => Promise<void>;
   run: (label: string, fn: () => Promise<void>) => Promise<void>;
   network: string;
@@ -423,6 +425,7 @@ function MilestoneCard({ index, review, m, terms, onchainStatus, onchainSubmissi
   const [artifact, setArtifact] = useState("");
   const [uri, setUri] = useState("");
   const [text, setText] = useState("");
+  const [delivery, setDelivery] = useState("");
   const [amount, setAmount] = useState("");
   const [evidence, setEvidence] = useState<EvidenceResponse | null>(null);
   const is = (role: string) => job.roles.includes(role);
@@ -430,12 +433,15 @@ function MilestoneCard({ index, review, m, terms, onchainStatus, onchainSubmissi
   const human = terms.type === "HUMAN_REVIEW";
   const plan = (terms.verificationPlan ?? {}) as { kind?: string; repo?: string; branch?: string; requiredChecks?: string[]; repeat?: { count: number; intervalMs: number } };
   const github = plan.kind === "GITHUB_CHECKS";
+  const rules = contentRules(terms);
   const ms = { milestoneId: m.id };
   const s = m.status;
   const fixtureBase = `${window.location.origin}/fixture`;
   const kindDetail = human
     ? `${m.revisionsUsed} of ${terms.maxRevisions} revisions used`
-    : github
+    : rules
+      ? "Checked by machine: the independent verifier reads the exact submitted text and signs PASS only if every rule holds"
+      : github
       ? `A commit merged into ${plan.repo} ${plan.branch} whose checks ${plan.requiredChecks?.join(", ")} succeeded`
       : plan.repeat
         ? `${plan.repeat.count} probes ${plan.repeat.intervalMs / 1000} s apart; every one must pass`
@@ -467,6 +473,18 @@ function MilestoneCard({ index, review, m, terms, onchainStatus, onchainSubmissi
             <>
               <dt>Rubric</dt>
               <dd>{terms.rubric}</dd>
+            </>
+          )}
+          {rules && (
+            <>
+              <dt>Rules</dt>
+              <dd>
+                <ul className="rule-list">
+                  {describeRules(rules).map((r) => (
+                    <li key={r}>{r}</li>
+                  ))}
+                </ul>
+              </dd>
             </>
           )}
           <dt>Status</dt>
@@ -528,7 +546,33 @@ function MilestoneCard({ index, review, m, terms, onchainStatus, onchainSubmissi
 
         {funded && (
           <div className="act">
-            {is("worker") && (s === "PENDING" || s === "REVISION_REQUESTED") && (
+            {is("worker") && (s === "PENDING" || s === "REVISION_REQUESTED") && rules && (
+              <div className="deliver-box">
+                <label className="field">
+                  <span>Your delivery</span>
+                  <textarea rows={8} value={delivery} onChange={(e) => setDelivery(e.target.value)} placeholder={rules.format === "json" ? '{ "…": "…" }' : "Paste the text you are delivering"} />
+                  <span className="hint">SETTLE stores it by its SHA-256 hash and submits that hash onchain; the verifier then checks these exact bytes against the rules.</span>
+                </label>
+                <button
+                  className="btn"
+                  disabled={busy || !delivery.trim()}
+                  onClick={() =>
+                    act(
+                      "submit",
+                      { type: "SUBMIT", ...ms },
+                      () => api("POST", `/v1/jobs/${job.id}/milestones/${m.id}/verifications`),
+                      async () => {
+                        const d = await api<{ hash: string; url: string }>("POST", "/v1/deliverables", { content: delivery, jobId: job.id });
+                        return { artifactHash: d.hash, uri: `${window.location.origin}${d.url}` };
+                      },
+                    )
+                  }
+                >
+                  Submit and verify
+                </button>
+              </div>
+            )}
+            {is("worker") && (s === "PENDING" || s === "REVISION_REQUESTED") && !rules && (
               <div className="inline">
                 <input
                   aria-label="Artifact"

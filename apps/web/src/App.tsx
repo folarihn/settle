@@ -10,6 +10,7 @@ import { JobDetail } from "./JobDetail";
 import { Home } from "./Landing";
 import { Swarm } from "./Swarm";
 import { toast, ToastHost } from "./toast";
+import { TryIt } from "./TryIt";
 import { Icon, Mark } from "./ui";
 import { connectedAccount, explorerAccount, initWallet, login, type Wallet } from "./wallet";
 
@@ -50,7 +51,7 @@ function signedOutWallet(real: Wallet | null): Wallet {
   return { ...(real ?? {}), selector: { ...(real?.selector ?? {}), wallet: refuse } } as unknown as Wallet;
 }
 
-type Page = "overview" | "agreements" | "bounties" | "swarm" | "agents" | "job" | "new" | "home";
+type Page = "overview" | "agreements" | "bounties" | "swarm" | "agents" | "job" | "new" | "home" | "try";
 
 function pageOf(route: string, signedIn: boolean): Page {
   if (/^#\/jobs\//.test(route)) return "job";
@@ -60,6 +61,7 @@ function pageOf(route: string, signedIn: boolean): Page {
   if (/^#\/swarm/.test(route)) return "swarm";
   if (route === "#/agents") return "agents";
   if (route === "#/home") return "home";
+  if (route === "#/try") return "try";
   return signedIn ? "overview" : "home";
 }
 
@@ -72,6 +74,7 @@ const TITLES: Record<Page, string> = {
   job: "Agreement",
   new: "New agreement",
   home: "Home",
+  try: "Try it",
 };
 
 export function App() {
@@ -223,6 +226,7 @@ export function App() {
               {page === "overview" && session && <Dashboard me={session.accountId} />}
               {page === "agreements" && (session ? <Agreements me={session.accountId} /> : <SignInRequired what="see your agreements" state={state} connect={connect} signIn={signIn} busy={busy} />)}
               {page === "new" && (session ? <CreateJob key={route} session={session} /> : <SignInRequired what="create an agreement or a bounty" state={state} connect={connect} signIn={signIn} busy={busy} />)}
+              {page === "try" && (session ? <TryIt session={session} /> : <SignInRequired what="post a test bounty and watch an AI agent take it" state={state} connect={connect} signIn={signIn} busy={busy} />)}
               {page === "bounties" && <BountyBoard session={visitor} />}
               {page === "job" && <JobDetail key={route} session={visitor} jobId={route.slice("#/jobs/".length)} />}
               {page === "swarm" && <Swarm key={route} session={visitor} {...(route.match(/^#\/swarm\/([A-Za-z0-9_-]+)$/) ? { agentId: route.slice("#/swarm/".length) } : {})} />}

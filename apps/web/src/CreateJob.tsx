@@ -19,6 +19,13 @@ export function CreateJob({ session }: { session: Session }) {
   const [workNear, setWorkNear] = useState("0.02");
   // Its own minimum: the API-and-design default (0.075) would exceed a small review reward.
   const [workFloorNear, setWorkFloorNear] = useState("");
+  const [autoFormat, setAutoFormat] = useState<"text" | "markdown" | "json">("markdown");
+  const [minWords, setMinWords] = useState("50");
+  const [maxWords, setMaxWords] = useState("300");
+  const [mustInclude, setMustInclude] = useState("");
+  const [mustNotInclude, setMustNotInclude] = useState("");
+  const [minHeadings, setMinHeadings] = useState("");
+  const [maxBytes, setMaxBytes] = useState("8000");
   const [worker, setWorker] = useState("");
   const [workerKind, setWorkerKind] = useState<"HUMAN" | "AGENT">("AGENT");
   const [apiNear, setApiNear] = useState("0.35");
@@ -41,6 +48,7 @@ export function CreateJob({ session }: { session: Session }) {
 
   const withDesign = template === "api-design";
   const review = template === "review";
+  const autoText = template === "auto-text";
 
   /** The agreement as it will be sent; throws a readable message for anything invalid. */
   const build = () =>
@@ -53,6 +61,13 @@ export function CreateJob({ session }: { session: Session }) {
         workTitle,
         brief,
         workNear,
+        autoFormat,
+        minWords,
+        maxWords,
+        mustInclude,
+        mustNotInclude,
+        minHeadings,
+        maxBytes,
         apiNear,
         designNear,
         floorNear: review ? workFloorNear : floorNear,
@@ -244,7 +259,81 @@ export function CreateJob({ session }: { session: Session }) {
             </>
           )}
 
-          {step === 2 && !review && (
+          {step === 2 && autoText && (
+            <>
+              <div className="subhead" style={{ marginTop: 0 }}>
+                The work · checked by machine
+              </div>
+              <label className="field">
+                <span>What should be delivered</span>
+                <input value={workTitle} onChange={(e) => setWorkTitle(e.target.value)} placeholder="A 150-word guide to claiming a bounty on SETTLE" maxLength={200} autoFocus />
+                <span className="hint">One line, up to 200 characters. Workers and agents see this and the rules below.</span>
+              </label>
+              <div className="fields">
+                <label className="field">
+                  <span>Reward (NEAR)</span>
+                  <input inputMode="decimal" value={workNear} onChange={(e) => setWorkNear(e.target.value)} />
+                  {openBounty && <span className="hint">Swarm agents only take bounties within their owner's limit; 0.05 NEAR or less is a safe test.</span>}
+                </label>
+                <label className="field">
+                  <span>Format</span>
+                  <select value={autoFormat} onChange={(e) => setAutoFormat(e.target.value as "text" | "markdown" | "json")}>
+                    <option value="markdown">Markdown</option>
+                    <option value="text">Plain text</option>
+                    <option value="json">JSON (must parse)</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Maximum size (bytes)</span>
+                  <input inputMode="numeric" value={maxBytes} onChange={(e) => setMaxBytes(e.target.value)} />
+                </label>
+              </div>
+              <div className="subhead">Rules · every one must hold for a PASS</div>
+              <div className="fields">
+                <label className="field">
+                  <span>Minimum words</span>
+                  <input inputMode="numeric" value={minWords} onChange={(e) => setMinWords(e.target.value)} placeholder="none" />
+                </label>
+                <label className="field">
+                  <span>Maximum words</span>
+                  <input inputMode="numeric" value={maxWords} onChange={(e) => setMaxWords(e.target.value)} placeholder="none" />
+                </label>
+                {autoFormat === "markdown" && (
+                  <label className="field">
+                    <span>Minimum headings</span>
+                    <input inputMode="numeric" value={minHeadings} onChange={(e) => setMinHeadings(e.target.value)} placeholder="none" />
+                  </label>
+                )}
+              </div>
+              <label className="field">
+                <span>Must include</span>
+                <input value={mustInclude} onChange={(e) => setMustInclude(e.target.value)} placeholder="wallet, testnet, claim" />
+                <span className="hint">Comma-separated phrases; each must appear (case doesn't matter).</span>
+              </label>
+              <label className="field">
+                <span>Must not include</span>
+                <input value={mustNotInclude} onChange={(e) => setMustNotInclude(e.target.value)} placeholder="mainnet, lorem ipsum" />
+              </label>
+              <div className="subhead">Time limits</div>
+              <div className="fields">
+                <label className="field">
+                  <span>Challenge window (minutes)</span>
+                  <input type="number" min={1} value={challengeMin} onChange={(e) => setChallengeMin(Number(e.target.value))} />
+                  <span className="hint">After a PASS you can object for this long; then it pays.</span>
+                </label>
+                <label className="field">
+                  <span>{openBounty ? "Claim within (hours)" : "Fund within (hours)"}</span>
+                  <input type="number" min={1} max={720} value={deadlineHours} onChange={(e) => setDeadlineHours(Number(e.target.value))} />
+                </label>
+                <label className="field">
+                  <span>Expires after (days)</span>
+                  <input type="number" min={1} max={365} value={expiresDays} onChange={(e) => setExpiresDays(Number(e.target.value))} />
+                </label>
+              </div>
+            </>
+          )}
+
+          {step === 2 && !review && !autoText && (
             <>
               <div className="subhead" style={{ marginTop: 0 }}>
                 {template === "github" ? "Milestone · GitHub CI checks" : template === "sustained" ? "Milestone · sustained API check" : "Milestone 1 · API check"}
@@ -361,8 +450,14 @@ export function CreateJob({ session }: { session: Session }) {
                   </div>
                 ))}
                 <div className="line">
-                  <span className="k">{review ? "Judged by" : "Challenge window"}</span>
-                  <span>{review ? `You: approve, or ask for up to ${revisions} revision${revisions === 1 ? "" : "s"}` : `${challengeMin} min after a PASS`}</span>
+                  <span className="k">{review || autoText ? "Judged by" : "Challenge window"}</span>
+                  <span>
+                    {review
+                      ? `You: approve, or ask for up to ${revisions} revision${revisions === 1 ? "" : "s"}`
+                      : autoText
+                        ? `The verifier, against your rules; pays ${challengeMin} min after a PASS unless you object`
+                        : `${challengeMin} min after a PASS`}
+                  </span>
                   <span />
                 </div>
                 {swarmCanTake(template, openBounty) && (

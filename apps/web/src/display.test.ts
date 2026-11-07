@@ -325,6 +325,7 @@ describe("auto-checked text form", () => {
   it("describes the rules in plain words for people", async () => {
     const { describeRules } = await import("./derive");
     expect(describeRules({ kind: "CONTENT_RULES", format: "json", maxBytes: 500, mustInclude: ["id"] })).toEqual(["A JSON document, at most 500 bytes.", 'Includes "id".']);
+    expect(describeRules({ kind: "CONTENT_RULES", format: "text", maxBytes: 9, mustInclude: ["a", "b"], mustNotInclude: ["**", "x"] }).slice(1)).toEqual(['Includes each of "a", "b".', 'Contains none of "**", "x".']);
   });
 });
 

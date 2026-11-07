@@ -4421,7 +4421,7 @@ li code,
 }
 
 /* ---- Live activity strip --------------------------------------------------------- */
-.activity {
+.act-strip {
   display: flex;
   align-items: center;
   gap: 18px;
@@ -4458,7 +4458,7 @@ li code,
   width: max-content;
   animation: ticker 60s linear infinite;
 }
-.activity:hover .act-track {
+.act-strip:hover .act-track {
   animation-play-state: paused;
 }
 .act-row {
@@ -4591,7 +4591,7 @@ li code,
   .try-facts {
     grid-template-columns: minmax(0, 1fr);
   }
-  .activity {
+  .act-strip {
     padding-left: 16px;
     padding-right: 16px;
   }

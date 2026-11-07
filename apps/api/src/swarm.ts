@@ -27,6 +27,18 @@ export const CreateAgentInput = z
   })
   .strict();
 
+/** An owner's changes to an agent. Takes effect on the runner's next pass; the agent's account and balance are unchanged. */
+export const UpdateAgentInput = z
+  .object({
+    name: CreateAgentInput.shape.name.optional(),
+    prompt: CreateAgentInput.shape.prompt.optional(),
+    knowledge: z.string().max(20_000).optional(),
+    maxBountyNear: NearAmount.optional(),
+    maxJobUsd: UsdAmount.optional(),
+  })
+  .strict()
+  .refine((u) => Object.values(u).some((v) => v !== undefined), "nothing to change");
+
 export const toYocto = (near: string) => {
   const [w, f = ""] = near.split(".");
   return (BigInt(w!) * 10n ** 24n + BigInt(f.padEnd(24, "0") || "0")).toString();
@@ -85,6 +97,26 @@ export class SwarmService {
       [id, p.accountId, a.name, a.prompt, a.knowledge, toYocto(a.maxBountyNear), maxJobNanoUsd, at],
     );
     return this.get(id);
+  }
+
+  async updateAgent(p: Principal, id: string, input: unknown): Promise<AgentView> {
+    const u = UpdateAgentInput.parse(input);
+    const a = await this.owned(p, id);
+    const maxJobNanoUsd = u.maxJobUsd !== undefined ? toNanoUsd(u.maxJobUsd) : Number(a.max_job_nano_usd);
+    if (maxJobNanoUsd <= 0 || maxJobNanoUsd > 1_000_000_000) throw new ApiError(400, "VALIDATION", "inference spend per job must be above $0 and at most $1");
+    const maxBounty = u.maxBountyNear !== undefined ? toYocto(u.maxBountyNear) : a.max_bounty_yocto;
+    if (BigInt(maxBounty) <= 0n) throw new ApiError(400, "VALIDATION", "maximum bounty must be above 0");
+    await this.db.query(
+      "UPDATE swarm_agents SET name = $2, prompt = $3, knowledge = $4, max_bounty_yocto = $5, max_job_nano_usd = $6, updated_at = $7 WHERE id = $1",
+      [id, u.name ?? a.name, u.prompt ?? a.prompt, u.knowledge ?? a.knowledge, maxBounty, maxJobNanoUsd, this.now()],
+    );
+    return this.get(id);
+  }
+
+  /** The owner's own view of what the agent works from, for editing. Knowledge is not public. */
+  async settings(p: Principal, id: string): Promise<{ prompt: string; knowledge: string }> {
+    const a = await this.owned(p, id);
+    return { prompt: a.prompt, knowledge: a.knowledge };
   }
 
   async list(): Promise<AgentView[]> {

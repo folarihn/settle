@@ -345,7 +345,12 @@ describe("try it in 60 seconds", () => {
     const { buildAgreement, swarmCanTake } = await import("./agreementForm");
     const req = buildAgreement(TRY_BOUNTY, 0);
     expect(req).toMatchObject({ openBounty: true, totalYocto: "20000000000000000000000", challengePeriodSec: 120, fundingDeadline: 2 * 3600_000 });
-    expect(req.milestones[0]).toMatchObject({ type: "AUTOMATED", verificationPlan: { kind: "CONTENT_RULES", format: "markdown", minWords: 60, maxWords: 200, mustInclude: ["wallet", "testnet"], minHeadings: 1 } });
+    expect(req.milestones[0]).toMatchObject({ type: "AUTOMATED", verificationPlan: { kind: "CONTENT_RULES", format: "markdown", minWords: 120, maxWords: 260, minHeadings: 2 } });
+    const plan = req.milestones[0]!.verificationPlan as { brief: string; mustInclude: string[]; mustNotInclude: string[] };
+    // A specific brief, phrases only a current, on-topic answer has, and no em dashes or asterisk bold.
+    expect(plan.brief).toContain("near-faucet.io");
+    expect(plan.mustInclude).toEqual(["settlenear.xyz", "Meteor", "near-faucet.io", "Sign in", "challenge window"]);
+    expect(plan.mustNotInclude).toEqual(["—", "–", "**", "mainnet", "onrender.com"]);
     expect(swarmCanTake(TRY_BOUNTY.template, TRY_BOUNTY.openBounty)).toBe(true);
     // Within the live Swarm agent's 0.05 NEAR limit.
     expect(BigInt(req.totalYocto) <= 5n * 10n ** 22n).toBe(true);

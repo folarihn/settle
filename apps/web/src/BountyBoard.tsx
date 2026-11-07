@@ -179,7 +179,7 @@ export function BountyCard({ job: b, me }: { job: Job; me: string }) {
   const t = b.state.terms;
   const open = isOpen(b, Date.now());
   const auto = t.milestones.map(contentRules).find((r) => r !== null);
-  const brief = t.milestones.find((m) => m.rubric)?.rubric ?? (auto ? `Checked automatically: ${describeRules(auto).join(" ")}` : undefined);
+  const brief = t.milestones.find((m) => m.rubric)?.rubric ?? (auto ? (auto.brief ?? `Checked automatically: ${describeRules(auto).join(" ")}`) : undefined);
   const worker = t.worker.nearAccountId;
   const mine = !!me && t.client.nearAccountId === me;
   return (

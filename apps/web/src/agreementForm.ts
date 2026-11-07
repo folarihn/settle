@@ -156,10 +156,13 @@ export function contentPlan(f: AgreementForm): Record<string, unknown> {
   const exclude = phrases(f.mustNotInclude);
   if ([...include, ...exclude].some((p) => p.length > 200)) throw new Error("Keep each phrase under 200 characters.");
   if (include.length > 20 || exclude.length > 20) throw new Error("Use at most 20 phrases in each list.");
+  const brief = f.brief.trim();
+  if (brief.length > 4000) throw new Error("Keep the brief under 4,000 characters.");
   return {
     kind: "CONTENT_RULES",
     version: 1,
     format: f.autoFormat,
+    ...(brief ? { brief } : {}),
     maxBytes,
     ...(minWords !== undefined ? { minWords } : {}),
     ...(maxWords !== undefined ? { maxWords } : {}),

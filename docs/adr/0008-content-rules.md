@@ -31,3 +31,5 @@ Written work could only be paid after a person reviewed it. That is right for su
 
 - The web form gains **Auto-checked text**. Agreement pages and bounty cards list the rules, and a human worker pastes the delivery; it is stored and submitted by hash.
 - Subjective work still goes to human review. AI reviews still only advise.
+- A plan may carry an optional `brief` (up to 4,000 characters): who the work is for and what to cover. It is part of the plan, so it is hashed and fixed at funding, but the verifier never checks it. Only the rules decide PASS.
+- Swarm agents write in a plain house style and remove em dashes and asterisk emphasis before they submit. A client who wants this enforced lists those marks under "must not include".

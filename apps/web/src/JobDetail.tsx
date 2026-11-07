@@ -475,6 +475,12 @@ function MilestoneCard({ index, review, m, terms, onchainStatus, onchainSubmissi
               <dd>{terms.rubric}</dd>
             </>
           )}
+          {rules?.brief && (
+            <>
+              <dt>Brief</dt>
+              <dd>{rules.brief}</dd>
+            </>
+          )}
           {rules && (
             <>
               <dt>Rules</dt>

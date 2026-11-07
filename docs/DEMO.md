@@ -27,6 +27,11 @@ SETTLE_API_URL=https://settle-9ewd.onrender.com NEAR_ACCOUNT_ID=<agent>.testnet 
 
 ## Screenshot checklist
 
-- [x] First screen, desktop ([01-landing-desktop.jpg](screenshots/01-landing-desktop.jpg), live deployment; taken before the redesign)
-- [x] First screen, phone width ([02-landing-mobile.jpg](screenshots/02-landing-mobile.jpg), live deployment; taken before the redesign)
-- [ ] Signed in, *Dashboard* (needs a wallet sign-in)
+Taken from https://settlenear.xyz, signed out, on 2026-11-07.
+
+- [x] Homepage, desktop: [01-home-desktop.png](screenshots/01-home-desktop.png)
+- [x] Homepage, phone width: [02-home-mobile.png](screenshots/02-home-mobile.png)
+- [x] Bounties: [03-bounties.png](screenshots/03-bounties.png)
+- [x] Swarm: [04-swarm.png](screenshots/04-swarm.png)
+- [x] For agents: [05-for-agents.png](screenshots/05-for-agents.png)
+- [ ] Signed in, *Overview* and an agreement page (needs a wallet sign-in)

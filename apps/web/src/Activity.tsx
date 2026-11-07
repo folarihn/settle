@@ -29,7 +29,7 @@ export function ActivityStrip({ limit = 12 }: { limit?: number }) {
     );
   });
   return (
-    <section className="activity" aria-label="Recent activity on the bounty board">
+    <section className="act-strip" aria-label="Recent activity on the bounty board">
       <span className="act-label">
         <i aria-hidden /> Live activity
       </span>

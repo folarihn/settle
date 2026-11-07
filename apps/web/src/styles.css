@@ -4314,3 +4314,292 @@ li code,
     display: none;
   }
 }
+
+/* ---- Try it in 60 seconds ---------------------------------------------------- */
+.hero-try {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  color: var(--lime);
+  font-weight: 500;
+  text-decoration: none;
+}
+.hero-try i {
+  width: 8px;
+  height: 8px;
+  background: var(--lime);
+  animation: blink 2.4s steps(1) infinite;
+}
+.hero-try:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.try {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+.try-terms {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--line-2);
+  border-top: 4px solid var(--lime);
+  border-radius: var(--radius);
+  background: var(--raised);
+}
+.try-terms h2 {
+  font: 800 28px / 1.05 var(--display);
+  font-variation-settings: "wdth" 75;
+  text-transform: uppercase;
+}
+.try-terms .btn {
+  align-self: flex-start;
+}
+.try-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px dashed var(--line-2);
+  border-bottom: 1px dashed var(--line-2);
+}
+.try-facts dt,
+.profile-stats dt {
+  font: 500 10px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.try-facts dd,
+.profile-stats dd {
+  margin: 3px 0 0;
+  font-size: 15px;
+}
+.try-steps {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: t;
+}
+.try-steps li {
+  counter-increment: t;
+  position: relative;
+  padding-left: 36px;
+  color: var(--text-2);
+}
+.try-steps li::before {
+  content: counter(t, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  font: 700 13px var(--mono);
+  color: var(--s-red);
+}
+.try-steps b {
+  color: var(--text);
+}
+.try-link {
+  grid-column: 1 / -1;
+  margin: 0 12px 8px;
+}
+
+/* ---- Live activity strip --------------------------------------------------------- */
+.activity {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px max(24px, calc((100vw - 1280px) / 2));
+  background: var(--navy);
+  border-bottom: 1px solid var(--border-dark);
+  overflow: hidden;
+}
+.act-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  font: 600 11px var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lime);
+}
+.act-label i {
+  width: 7px;
+  height: 7px;
+  background: var(--lime);
+  animation: blink 2.4s steps(1) infinite;
+}
+.act-viewport {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.act-track {
+  display: flex;
+  width: max-content;
+  animation: ticker 60s linear infinite;
+}
+.activity:hover .act-track {
+  animation-play-state: paused;
+}
+.act-row {
+  display: flex;
+  gap: 28px;
+  padding-right: 28px;
+}
+.act-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+  color: #c3cad7;
+  font-size: 13.5px;
+  text-decoration: none;
+}
+.act-item:hover span {
+  color: var(--ivory);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.act-item i {
+  width: 8px;
+  height: 8px;
+  background: var(--cobalt);
+}
+.act-item.ok i {
+  background: var(--lime);
+}
+.act-item.bad i {
+  background: var(--coral);
+}
+.act-item.warn i {
+  background: #f5b65a;
+}
+.act-item.neutral i {
+  background: var(--steel);
+}
+.act-item time {
+  font-size: 11.5px;
+  color: var(--steel);
+}
+@keyframes ticker {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* ---- Agent track record -------------------------------------------------------- */
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.history {
+  border-top: 1px solid var(--line);
+}
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 170px;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+}
+.history-row:hover {
+  background: var(--hover);
+}
+.history-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* ---- FAQ ----------------------------------------------------------------------- */
+.faq-list {
+  border-top: 2px solid var(--text);
+}
+.faq-item {
+  border-bottom: 1px solid var(--line-2);
+}
+.faq-item summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 4px;
+  cursor: pointer;
+  list-style: none;
+  font: 600 17px var(--font);
+  color: var(--text);
+}
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.faq-item summary::after {
+  content: "+";
+  font: 500 20px var(--mono);
+  color: var(--s-red);
+  transition: transform 0.2s var(--ease);
+}
+.faq-item[open] summary::after {
+  transform: rotate(45deg);
+}
+.faq-item p {
+  max-width: 72ch;
+  padding: 0 4px 18px;
+  color: var(--text-2);
+  font-size: 15.5px;
+}
+
+@media (max-width: 900px) {
+  .try {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profile-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .history-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .history-row .right {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .try-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .activity {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .act-label {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .act-viewport {
+    overflow-x: auto;
+  }
+  .act-row[aria-hidden] {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .act-track {
+    animation: none !important;
+    transform: none;
+  }
+}

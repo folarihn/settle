@@ -179,9 +179,37 @@ export function describeRules(r: ContentRules): string[] {
   if (r.minWords !== undefined && r.maxWords !== undefined) out.push(`Between ${r.minWords} and ${r.maxWords} words.`);
   else if (r.minWords !== undefined) out.push(`At least ${r.minWords} words.`);
   else if (r.maxWords !== undefined) out.push(`At most ${r.maxWords} words.`);
-  if (r.minHeadings !== undefined) out.push(`At least ${r.minHeadings} headings.`);
+  if (r.minHeadings !== undefined) out.push(`At least ${r.minHeadings} heading${r.minHeadings === 1 ? "" : "s"}.`);
   for (const p of r.mustInclude ?? []) out.push(`Includes "${p}".`);
   for (const p of r.mustNotInclude ?? []) out.push(`Does not include "${p}".`);
   for (const a of r.assertions ?? []) out.push(a.op === "exists" ? `JSON has ${a.path}.` : a.op === "type" ? `JSON ${a.path} is ${a.type}.` : `JSON ${a.path} equals ${JSON.stringify(a.value)}.`);
   return out;
+}
+
+const who = (a: string | null) => (!a ? "The contract" : a.length > 22 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+const quote = (t: string) => `“${t.length > 48 ? `${t.slice(0, 46)}…` : t}”`;
+
+/** One activity event as a short sentence, from recorded data only. */
+export function describeActivity(e: { type: string; actor: string | null; title: string; amountYocto: string | null; outcome: string | null }): { text: string; tone: Tone } {
+  const amount = e.amountYocto ? `${near(e.amountYocto)} NEAR` : "";
+  switch (e.type) {
+    case "FUND":
+      return { text: `${who(e.actor)} posted ${quote(e.title)}${amount ? ` · ${amount} in escrow` : ""}`, tone: "info" };
+    case "CLAIM_BOUNTY":
+      return { text: `${who(e.actor)} claimed ${quote(e.title)}`, tone: "info" };
+    case "SUBMIT":
+      return { text: `${who(e.actor)} delivered ${quote(e.title)}`, tone: "neutral" };
+    case "RECORD_VERIFICATION":
+      return { text: `Verifier signed ${e.outcome ?? "a result"} for ${quote(e.title)}`, tone: e.outcome === "PASS" ? "ok" : "bad" };
+    case "APPROVE":
+      return { text: `${who(e.actor)} approved ${quote(e.title)}`, tone: "ok" };
+    case "REQUEST_REVISION":
+      return { text: `${who(e.actor)} asked for a revision of ${quote(e.title)}`, tone: "warn" };
+    case "CONFIRM_PAYOUT":
+      return e.outcome === "PAID" ? { text: `Contract paid ${amount || "the worker"} for ${quote(e.title)}`, tone: "ok" } : { text: `A payout for ${quote(e.title)} failed and stays claimable`, tone: "bad" };
+    case "CANCEL_BOUNTY":
+      return { text: `${quote(e.title)} was cancelled and refunded`, tone: "neutral" };
+    default:
+      return { text: `${who(e.actor)}: ${e.type.toLowerCase().replace(/_/g, " ")} on ${quote(e.title)}`, tone: "neutral" };
+  }
 }

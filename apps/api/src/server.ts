@@ -161,6 +161,11 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
     const job = await jobs.get(p, IdParams.parse(req.params).id);
     return { job, chain: await jobs.chainSnapshot(job.state) };
   });
+  app.get("/v1/activity", async (req) => {
+    await viewer(req);
+    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) }).parse(req.query);
+    return { items: await jobs.activity(limit) };
+  });
   app.get("/v1/jobs/:id/events", async (req) => ({ events: await jobs.events(await viewer(req), IdParams.parse(req.params).id) }));
   app.post("/v1/jobs/:id/actions", async (req, reply) => {
     const p = await auth(req);

@@ -178,3 +178,28 @@ describe("review-only bounties (the web form's Written or creative work)", () =>
     expect((await client.post("/v1/jobs", body((amount * 2n).toString()))).statusCode).toBe(400);
   });
 });
+
+describe("public activity feed", () => {
+  it("shows events on posted bounties to anyone, and nothing from private agreements", async () => {
+    const client = as(h, await login(h, CLIENT));
+    const worker = as(h, await login(h, CLAIMER, "HUMAN"));
+    // A private, direct agreement with an accepted worker: its events must never be listed.
+    const direct = (await client.post("/v1/jobs", jobInput())).json();
+    const { job } = await postedBounty();
+    h.chain.agreements.set(job.id, onchain(job.state, "Funded", CLAIMER));
+    await client.post(`/v1/jobs/${job.id}/sync`);
+    await worker.post(`/v1/jobs/${job.id}/actions`, { type: "SUBMIT", milestoneId: "api", artifactHash: "c1", uri: "https://x.example" });
+
+    const res = await h.app.inject({ method: "GET", url: "/v1/activity?limit=50" });
+    expect(res.statusCode).toBe(200);
+    const items: { jobId: string; type: string; actor: string | null; title: string }[] = res.json().items;
+    const mine = items.filter((i) => i.jobId === job.id).map((i) => i.type);
+    expect(mine).toEqual(expect.arrayContaining(["CLAIM_BOUNTY", "SUBMIT"]));
+    expect(items.some((i) => i.jobId === direct.id)).toBe(false);
+    expect(items.find((i) => i.jobId === job.id && i.type === "SUBMIT")).toMatchObject({ actor: CLAIMER, title: expect.any(String) });
+    // Newest first.
+    const times = items.map((i) => (i as unknown as { at: number }).at);
+    expect([...times].sort((a, b) => b - a)).toEqual(times);
+    expect((await h.app.inject({ method: "GET", url: "/v1/activity?limit=500" })).statusCode).toBe(400);
+  });
+});

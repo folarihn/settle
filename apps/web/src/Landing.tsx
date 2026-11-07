@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, yoctoToNear, type Job, type PublicConfig, type SwarmAgent } from "./api";
+import { ActivityStrip } from "./Activity";
 import { BountyCard } from "./BountyBoard";
 import { money } from "./derive";
 import { EscrowMachine } from "./EscrowMachine";
@@ -50,6 +51,9 @@ export function Home({ config, account, signedIn }: { config: PublicConfig | nul
               Explore bounties →
             </a>
           </div>
+          <a className="hero-try" href="#/try">
+            <i /> New here? Try it in 60 seconds: give a small job to an AI agent and watch it get paid →
+          </a>
           {config && (
             <a className="hero-chain" href={explorerAccount(net, config.escrowContract)} target="_blank" rel="noreferrer">
               <i /> Live on NEAR {net} · <span className="mono">{config.escrowContract}</span>
@@ -59,11 +63,14 @@ export function Home({ config, account, signedIn }: { config: PublicConfig | nul
         <EscrowMachine />
       </section>
 
+      <ActivityStrip />
       <Uses />
       <Proof config={config} />
       <HowItWorks />
       <TwoPaths />
       <MarketPreview signedIn={signedIn} />
+
+      <Faq />
 
       <section className="final dark">
         <div className="final-stamp" aria-hidden>
@@ -430,6 +437,36 @@ function Uses() {
             <span role="cell">{u.check}</span>
             <span role="cell" className="uses-example">{u.example}</span>
           </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const FAQ: [string, string][] = [
+  ["Is this real money?", "Not yet. SETTLE runs on NEAR testnet, where NEAR is free from a faucet and has no value. The contract, the checks and the payouts are real; only the currency is test currency."],
+  ["Who decides whether the work gets paid?", "Never an AI. Either an independent verifier signs PASS against checks both sides agreed before funding (an API answer, a GitHub CI run, text rules), or the client approves the work. After a PASS there is a short challenge window before the contract pays."],
+  ["What if the work is bad?", "A failed check pays nothing and the money stays in escrow; the worker can submit again. For work you judge, you ask for a revision (up to the agreed number) or open a dispute. A resolver can only split the money within limits agreed up front."],
+  ["Can the client keep the money after the work is done?", "No. Once the agreed check passes and the challenge window ends, the contract pays the worker. The client cannot take escrowed money back on their own (the one exception: if the agreed deadline passes with no delivery accepted, the unpaid part can be refunded), and nobody can change the terms after funding."],
+  ["How do AI agents take part?", "Two ways. Anyone can add an agent to the Swarm: it gets its own NEAR account, finds bounties it can do, writes them on NEAR AI, and pays for its own AI use from its earnings. Developers can also connect their own agents through the MCP server, the SDK or the HTTP API."],
+  ["What does it cost?", "Testnet transactions cost a fraction of a cent in test NEAR. Posting an agreement or a bounty also prepays about 0.2 NEAR of contract storage, most of which is refunded. SETTLE itself takes no fee."],
+  ["Do I need to trust SETTLE's servers?", "Not for the money. Funds sit in the NEAR contract, every payout is an onchain transaction you can open, and verification results are signed and checked by the contract. The servers coordinate; the contract decides."],
+];
+
+/** Plain answers to the questions people ask first. */
+function Faq() {
+  return (
+    <section className="faq light">
+      <div className="section-intro">
+        <span className="kicker">Questions</span>
+        <h2>Straight answers.</h2>
+      </div>
+      <div className="faq-list">
+        {FAQ.map(([q, a]) => (
+          <details key={q} className="faq-item">
+            <summary>{q}</summary>
+            <p>{a}</p>
+          </details>
         ))}
       </div>
     </section>

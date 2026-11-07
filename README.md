@@ -1,57 +1,118 @@
 # SETTLE
 
-**Verifiable work agreements and fair payments for humans and AI agents.**
+**Escrow for work between people and AI agents, on NEAR.** You agree up front what will be delivered and how it's checked. The money waits in a NEAR contract, and the contract pays only when the agreed check passes or the client approves.
 
-> Status: **live on NEAR testnet, fully hosted.** Web app and API: **https://settle-9ewd.onrender.com**. Verifier: its own service, **https://settle-verifier.onrender.com** (the only holder of the verifier key). Escrow contract: [`settle-escrow-14f651.testnet`](https://testnet.nearblocks.io/address/settle-escrow-14f651.testnet). Verified end-to-end runs (people in the browser, agents through the SDK and MCP, GitHub CI bounties, open bounties, an autonomous bounty agent) are recorded in [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md). One-page overview: [docs/SUBMISSION.md](docs/SUBMISSION.md). Everything runs on free plans: after about 15 minutes idle, the first page load or verification takes about a minute while a service wakes.
+**Live: https://settlenear.xyz** · escrow contract [`settle-escrow-14f651.testnet`](https://testnet.nearblocks.io/address/settle-escrow-14f651.testnet) · NEAR **testnet** only, no real money.
 
-## HOW TO TEST (Hackathon judges: start here)
+![SETTLE homepage](docs/screenshots/01-home-desktop.png)
 
-**A judge who cannot run the product cannot score it.** This section stays at the top of the README. Each status below is only updated once it has been checked.
+## How to test (judges: start here)
 
-| Resource | Current status |
+### 1. Look around without a wallet (2 minutes)
+
+| Open | What you see |
 | --- | --- |
-| Live app | **Live:** https://settle-9ewd.onrender.com. Health: [`/healthz`](https://settle-9ewd.onrender.com/healthz); readiness (database + contract): [`/readyz`](https://settle-9ewd.onrender.com/readyz). Verifier service: https://settle-verifier.onrender.com (only `/healthz` and a wake-up route are public). Postgres 16 on Render. All on free plans: a sleeping service takes about a minute to wake |
-| NEAR testnet contract | **Deployed:** [`settle-escrow-14f651.testnet`](https://testnet.nearblocks.io/address/settle-escrow-14f651.testnet). It was first deployed in tx [`2aQ9BHof…J6UH`](https://testnet.nearblocks.io/txns/2aQ9BHofYPXFT1zdZWuTZe5zmVuKNzLCZXkzdHwPJ6UH) and last upgraded in place for open bounties: code hash `BkDt9XhT…6fgY` equals the reproducible build of commit `dca78be` ([workflow run](https://github.com/folarihn/settle/actions/runs/41824041417)). Redeploys go through the *Deploy escrow to NEAR testnet* workflow |
-| Demo fixture | **Live:** [`/fixture/broken/health`](https://settle-9ewd.onrender.com/fixture/broken/health) (FAIL) and [`/fixture/fixed/health`](https://settle-9ewd.onrender.com/fixture/fixed/health) (PASS); `GET /v1/config` reports the base as `fixtureBaseUrl` |
-| Onchain evidence | [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md). **Run 6: the full flow done by people in the browser with Meteor Wallet testnet accounts**; **run 7: record, finalize and payout happen automatically, 89 s from submission to payment**, agreement `job_r_hjk81zXxRTZBYl`, `Completed` onchain (FAIL then PASS, 0.35 NEAR paid, revision, 0.075/0.075 partial settlement). **Run 3, fully hosted**, agreement `job_XuOByu9_flTyvHjn`, 18 checks over 18 transactions: hosted fixture FAIL ([`3iZ1wY2q…`](https://testnet.nearblocks.io/txns/3iZ1wY2qFpVjp5WExr2AGBsmeQZV3CGa8PG2266JELX1)) released nothing; PASS ([`3y7GvVBj…`](https://testnet.nearblocks.io/txns/3y7GvVBjg2DoAP3LdAhkmd4Rxr2Zn2Js5LqZQtkuoiSp)), then challenge window, then exactly 0.3 NEAR to the agent ([`DSybJMn5…`](https://testnet.nearblocks.io/txns/DSybJMn5UXoucFtgRVMimAcWsLTWP7Vx99dkr8JEBpfj)); revision then approval; 50/50 partial settlement ([`meUW2ZvS…`](https://testnet.nearblocks.io/txns/meUW2ZvS5MmQpqVDFtkHm4FSxkjnpkwLeKdzs6d7WWJ)). Reproduce with `scripts/testnet-e2e.mjs` |
-| Test accounts | Use fresh NEAR **testnet** accounts (client, worker). Never share seed phrases or private keys |
-| Faucet | The testnet faucet linked from the [NEAR docs](https://docs.near.org/), or `near account create-account sponsor-by-faucet-service <name>.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create` (near-cli-rs 0.30.1, installed with `scripts/install-near-tools.sh near-cli`) |
-| Demo walkthrough | Video not recorded yet; the script is [docs/DEMO.md](docs/DEMO.md). Submission summary: [docs/SUBMISSION.md](docs/SUBMISSION.md) |
-| CI | Every PR runs: TypeScript build/typecheck/tests (domain, verifier, API on PGlite **and** Postgres 16, agent SDK, MCP server, bounty agent; web build); contract fmt/clippy/unit tests; WASM build + sandbox tests; reproducible WASM build. NEAR tools are installed by [`scripts/install-near-tools.sh`](scripts/install-near-tools.sh) with pinned versions and SHA-256 checks |
-| Owner deployment steps | [docs/DEPLOY_TESTNET.md](docs/DEPLOY_TESTNET.md): contract account and two secrets (Part A), verifier key (Part B), Render Blueprint (Part C) |
+| [settlenear.xyz](https://settlenear.xyz) | The escrow machine. Step through it, including a failed check where the money stays locked (clearly labelled as a simulation). Below it: real transactions from recorded runs, each opening on the NEAR explorer. |
+| [Bounties](https://settlenear.xyz/#/bounties) → **View the record** | Every bounty posted so far, with who did it and what the contract paid. |
+| [Swarm](https://settlenear.xyz/#/swarm) | The live AI agent, its earnings and AI spend, and lines to the bounties it was paid for. |
+| [For agents](https://settlenear.xyz/#/agents) | How an AI agent connects: MCP, SDK or HTTP, with copyable setup. |
+| [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md) | Twelve recorded end-to-end runs with transaction links. |
 
-### Before you start (5 minutes, once)
+### 2. Get a testnet wallet and free test NEAR (5 minutes, once)
 
-1. Use two browser profiles (or two browsers): one for the **client**, one for the **worker**.
-2. In each, create a NEAR **testnet** account in Meteor Wallet (https://wallet.meteorwallet.app, switched to *testnet*; MyNearWallet no longer creates new accounts), and get testnet NEAR from the faucet at https://near-faucet.io. The client needs about 1 NEAR (0.5 NEAR escrow, a 0.2 NEAR storage deposit that is mostly refunded, and gas). The worker needs a little for gas.
-3. Allow pop-ups for `settle-9ewd.onrender.com`. The wallet opens a pop-up for every signature.
-4. Free hosting: if nobody has used the site for about 15 minutes, the first page load and the first verification each take about a minute while the service wakes up.
+1. **Create a wallet:**
+   - open **[Meteor Wallet](https://wallet.meteorwallet.app)** and create a wallet;
+   - switch the network to **Testnet** in Meteor's settings;
+   - create an account such as `yourname.testnet`.
 
-### Judge path (about 10 minutes)
+   Save the recovery phrase privately. Never share it with anyone, including us.
+2. **Get free test NEAR:**
+   - open the **[NEAR testnet faucet](https://near-faucet.io)**;
+   - enter your `yourname.testnet` account and request NEAR;
+   - wait a few seconds; your balance shows in Meteor.
 
-The page refreshes itself, and the verifier service records results, finalizes after the challenge window and pays out automatically. You only do the steps that need a person.
+   Test NEAR has no value. About 1 NEAR is plenty for every path below.
+3. **Two-person paths** (one client, one worker): make a second account the same way in a second browser profile.
+4. **Allow pop-ups** for `settlenear.xyz`. The wallet opens one for each signature.
 
-1. Open https://settle-9ewd.onrender.com, click **Connect wallet** (top right) → **Meteor Wallet** (or MyNearWallet for an existing account) and approve, then click **Sign in as …**. Signing in signs a message only; it does not send a transaction.
-2. **Client:** **New agreement**. Step 1 keep **API + design**; step 2 enter the worker's testnet account; step 3 keep the defaults (an automated API milestone of 0.35 NEAR, and a human-review design milestone of 0.15 NEAR with 2 revisions and a 0.075 NEAR protected minimum); step 4 **Create agreement** and approve.
-3. **Worker:** open it from the **Dashboard** (it is under *Needs your action*) and click **Accept terms**.
-4. **Client:** **Fund escrow · 0.5 NEAR** and approve. The status becomes `Funded`.
-5. **Worker, API milestone:** commit `demo-broken`, URL `https://settle-9ewd.onrender.com/fixture/broken` → **Submit and verify**. You get a real **FAIL**, recorded onchain automatically. **Evidence** shows `$.status == "ok"` failing with `got "degraded"`. Nothing becomes payable.
-6. **Worker:** commit `demo-fixed`, URL `https://settle-9ewd.onrender.com/fixture/fixed` → **Submit and verify** → **PASS**. Then just watch: the challenge window (2 minutes by default) runs out, the milestone is finalized, and **0.35 NEAR is paid to the worker automatically**. The transfer appears onchain within a few seconds of the window ending. If a sleeping verifier delays it, keep the page open; the page wakes it.
-7. **Design milestone:** the worker submits (any content hash); the client clicks **Request revision**; the worker resubmits. Then either the client clicks **Approve and release**, or the worker enters `0.075` → **Propose partial settlement** and the client clicks **Accept 0.075 NEAR settlement**. The payout (both shares) happens automatically. **Claim payment** / **Release payment** are there if you don't want to wait.
-8. **Agent parity:** the same flow driven only by an AI agent's key through the SDK is recorded in [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md) (runs 3 and 7). In **run 8 an AI agent hires another AI agent using only MCP tools**, from create to paid. **Run 10: open bounties**: an agent posts funded work with no worker, another agent claims it and is paid, and a cancelled bounty is refunded by the contract. **Run 12: Swarm-for-Hire on NEAR AI**: an agent anyone can add is funded with NEAR, picks up a writing bounty, writes it on NEAR AI, gets a TEE-signed advisory review, is paid by the contract after approval, and pays its own inference bill at the exact billed cost. It also took an SVG-logo job, which now waits for the client's judgment. **Run 11: an autonomous bounty agent** claims a bounty 9 s after it is posted (having first checked its own service against the locked checks), passes and is paid, and skips a human-review bounty it cannot do. **Run 9 adds a GitHub CI bounty** on the public `near/near-sdk-rs` repo (an unmerged PR commit fails; the merged commit passes and is paid) and a sustained health check. To plug SETTLE into Claude Code, Claude Desktop or Cursor, see [docs/FOR_AGENTS.md](docs/FOR_AGENTS.md).
+Signing in to SETTLE signs a message only. It never sends a transaction or moves money.
 
-### Verifiable without a wallet
+Prefer the terminal? Run this with near-cli-rs, installed by `scripts/install-near-tools.sh near-cli`:
 
-- [`/readyz`](https://settle-9ewd.onrender.com/readyz) shows the database and the escrow contract answering. The fixture's [failing](https://settle-9ewd.onrender.com/fixture/broken/health) and [passing](https://settle-9ewd.onrender.com/fixture/fixed/health) responses are public.
-- The run-3 transactions in [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md) open on testnet.nearblocks.io: a FAIL that released nothing, a PASS, a payout of exactly 0.3 NEAR, revision then approval, and a 50/50 split paying both parties.
+`near account create-account sponsor-by-faucet-service <name>.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create`
+
+It creates a funded testnet account.
+
+### 3. Project test accounts (for reference; use your own wallet to act)
+
+These public accounts appear in the recorded runs. Open them on the explorer to see their history. Their keys are never shared.
+
+| Account | Role in the runs |
+| --- | --- |
+| [`settle-client-14f651.testnet`](https://testnet.nearblocks.io/address/settle-client-14f651.testnet) | Client in agreements; owner of the Swarm agent |
+| [`settle-agent-14f651.testnet`](https://testnet.nearblocks.io/address/settle-agent-14f651.testnet) | AI agent: hires, works, posts bounties |
+| [`e58da65d…f389a2`](https://testnet.nearblocks.io/address/e58da65ddfc9a59c9471f98475b4973bbc64adaed531e8ad53d80c77a6f389a2) | The Swarm agent "SETTLE docs writer" (its own implicit account) |
+| [`settle-verifier-14f651.testnet`](https://testnet.nearblocks.io/address/settle-verifier-14f651.testnet) | Independent verifier: signs PASS/FAIL |
+| [`settle-resolver-14f651.testnet`](https://testnet.nearblocks.io/address/settle-resolver-14f651.testnet) | Dispute resolver |
+| [`settle-swarm-14f651.testnet`](https://testnet.nearblocks.io/address/settle-swarm-14f651.testnet) | Swarm operator: receives agents' AI bills |
+
+### 4. Test paths
+
+**A. Give work to an AI agent: one account, about 5 minutes**
+1. Sign in (**Connect wallet** → Meteor → **Sign in as …**).
+2. Go to **Bounties** → **Post a bounty**:
+   - choose **Auto-checked text** (rules a machine checks) or **Written or creative work** (you judge it);
+   - describe a short writing task, for example "A 150-word guide to claiming a bounty on SETTLE";
+   - set the reward to **0.05 NEAR or less** and approve **post_bounty**.
+3. Open **Swarm** (this wakes the runner) and wait 1–2 minutes. The agent claims the bounty, writes it on NEAR AI and submits it.
+4. What happens next depends on the bounty type:
+   - **Auto-checked:** the verifier checks the text against your rules and, after the 2-minute challenge window, the contract pays the agent.
+   - **Written work:** read it and the AI's advisory review, then click **Approve** or **Request revision**.
+
+**B. An agreement with an automated check: two accounts, about 10 minutes**
+1. **Client:** **Agreements** → **New agreement** → **API and design**:
+   - enter the worker's testnet account;
+   - keep the defaults: 0.35 NEAR API check plus 0.15 NEAR design;
+   - **Create agreement** and approve.
+2. **Worker:** open the agreement → **Accept terms**.
+3. **Client:** **Fund escrow · 0.5 NEAR**.
+4. **Worker, API milestone, failing version:**
+   - commit `demo-broken`, URL `https://settle-9ewd.onrender.com/fixture/broken`;
+   - **Submit and verify**: a real **FAIL**, and nothing is paid.
+5. **Worker, fixed version:**
+   - commit `demo-fixed`, URL `https://settle-9ewd.onrender.com/fixture/fixed`: **PASS**;
+   - after the challenge window, the contract pays 0.35 NEAR automatically.
+6. **Design milestone:**
+   - the worker submits; the client clicks **Request revision**, then **Approve**;
+   - or the parties settle on a 0.075 NEAR split.
+
+**C. Developers and agents**
+Connect Claude Code, Claude Desktop or Cursor through the MCP server, or use the SDK or HTTP API: [For agents](https://settlenear.xyz/#/agents) and [docs/FOR_AGENTS.md](docs/FOR_AGENTS.md).
+
+### Good to know
+
+- **Free hosting:** after about 15 minutes idle, the first request takes about a minute while a service wakes. Keep the page open; it wakes the services itself.
+- **Testnet only:** amounts are test NEAR. AI never decides payment; a passed check (after the challenge window) or a person's approval does.
+- **Every transaction** you sign links to [testnet.nearblocks.io](https://testnet.nearblocks.io).
+
+### Status
+
+| Resource | Status |
+| --- | --- |
+| Web app | **Live** at https://settlenear.xyz (Vercel). The API also serves it at https://settle-9ewd.onrender.com |
+| API | **Live** on Render: [`/healthz`](https://settle-9ewd.onrender.com/healthz), [`/readyz`](https://settle-9ewd.onrender.com/readyz) (database + contract). Postgres 16 on Render's free plan, which expires on 2026-12-03 |
+| Verifier and Swarm runner | **Live** on Render as separate services. Only `/healthz` and a wake-up route are public. The verifier key lives only in the verifier |
+| Escrow contract | **Deployed** on testnet: [`settle-escrow-14f651.testnet`](https://testnet.nearblocks.io/address/settle-escrow-14f651.testnet). Code hash `BkDt9XhT…6fgY` equals the reproducible build of commit `dca78be` ([workflow run](https://github.com/folarihn/settle/actions/runs/41824041417)) |
+| Demo fixture | [`/fixture/broken/health`](https://settle-9ewd.onrender.com/fixture/broken/health) (fails) and [`/fixture/fixed/health`](https://settle-9ewd.onrender.com/fixture/fixed/health) (passes) |
+| Onchain evidence | [docs/TESTNET_RUN.md](docs/TESTNET_RUN.md): people in the browser (run 6), automatic payout (run 7), agent hires agent over MCP (run 8), GitHub CI and uptime checks (run 9), open bounties (run 10), an autonomous bounty agent (run 11), Swarm-for-Hire on NEAR AI with a revision (run 12) |
+| CI | Every PR runs TypeScript build, typecheck and tests (API on PGlite and Postgres 16), contract fmt, clippy and unit tests, WASM build and sandbox tests, and the reproducible WASM build |
+| Demo script and summary | [docs/DEMO.md](docs/DEMO.md), [docs/SUBMISSION.md](docs/SUBMISSION.md) |
 
 ### Known limitations
 
-- **Testnet only;** no mainnet funds.
-- **Wallets:** Meteor Wallet and MyNearWallet are wired up in the web app. Wallet sign-in and every step were exercised by people in the browser with Meteor Wallet (run 6); zero-deposit actions are approved by Meteor's contract-limited key without a pop-up.
-- **Free tier:** Render services sleep after about 15 minutes idle. A sleeping service takes about 25 seconds to wake for a page load. Render does not wake a sleeping free service for requests from its other services (it answers 502), so while a verification is queued, the judge's browser and the agent SDK wake the verifier from outside; the first verification after idle then takes about a minute. The Render Postgres database is on the free plan and **expires on 2026-12-03**. Paid plans (about $7/month per service) would remove all wake-up delays.
-- **Ordering:** the API records an action before the wallet signs it. If a wallet pop-up is cancelled, the page shows a divergence notice with a retry button; money always follows the onchain state.
-- **Verifier:** checks deployed HTTP APIs (once, or repeatedly for up to 2 minutes) and GitHub CI results; it never runs submitted code. One verifier key signs results; the challenge window and the resolver are the safeguards.
+- **Testnet only;** no mainnet funds. Wallets: Meteor Wallet and MyNearWallet.
+- **Ordering:** the API records an action before the wallet signs it. If a wallet pop-up is cancelled, the page shows a divergence notice with a retry button. Money always follows the onchain state.
+- **Verifier scope:** it checks deployed HTTP APIs (once, or repeatedly for up to 2 minutes), GitHub CI results, and text or data against agreed rules. It never runs submitted code. One verifier key signs results; the challenge window and the resolver are the safeguards.
 - **Contract upgradability:** the contract account is not locked, so whoever holds its key could deploy different code.
 
 ## What SETTLE does
@@ -64,20 +125,17 @@ Clients (human or agent) and workers (human or agent) agree on milestone-based a
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md), [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md), and [AGENTS.md](AGENTS.md).
 
-### MVP boundaries
+### Scope
 
-Build one end-to-end demonstrable software-development agreement. Support both human and agent clients/workers through the same service layer. Two milestone types only: `AUTOMATED` and `HUMAN_REVIEW`. One NEAR testnet asset (native NEAR in MVP, denomination in yoctoNEAR); no mainnet money. One approved offchain verifier and explicit dispute authority. Open bounties are a plain list of funded work (first claimer wins); there is no marketplace search, matching or bidding, and no arbitrary AI judging, token, NFT, arbitrary user-supplied container privileges, or complex reputation system.
+People and AI agents use the same service layer, the same API and the same contract rules. Milestones are either automated (an HTTP API check, GitHub CI, or text and data rules) or human review. Native NEAR on testnet, amounts in yoctoNEAR. One approved verifier and an explicit dispute resolver. AI may advise (the Swarm's reviews) but never decides payment.
 
-### Proposed stack
+### Stack
 
-- Web: Next.js + TypeScript
-- API: Node.js + TypeScript, schema validation with Zod
-- Database: Postgres + Prisma (offchain application state only)
-- Chain: NEAR Rust contract (`near-sdk`), NEAR testnet
-- Verification: separate isolated worker and pre-approved tests, not inside the public API process
-- CI: GitHub Actions for formatting, linting, type checks, focused unit/contract tests
-
-See the implementation plan for the minimal vertical slice, contract invariants, and phased delivery. Deployment is not complete until real URLs and transaction receipts appear here.
+- **Web:** Vite + React 19, NEAR Wallet Selector (Meteor, MyNearWallet). Hosted on Vercel; it forwards `/v1` to the API.
+- **API:** Fastify + TypeScript, validated with Zod; Postgres (PGlite in tests). Hosted on Render with a separate verifier worker and Swarm runner.
+- **Chain:** NEAR Rust contract (`near-sdk` 5.30) on testnet.
+- **AI:** NEAR AI Cloud, with TEE-signed responses and billed costs read back exactly.
+- **CI:** GitHub Actions for TypeScript, Rust, WASM sandbox and reproducible builds.
 
 ## Development
 
@@ -88,15 +146,15 @@ pnpm workspace (Node 22, pnpm 11). `pnpm install && pnpm build && pnpm typecheck
 | Package | What it is |
 | --- | --- |
 | `packages/domain` | Agreement terms schema (Zod), terms/plan hashing, the deterministic milestone state machine and escrow reconciliation. Pure: no I/O, clock passed in. The API, agent SDK and contract mirror these rules. |
-| `contracts/escrow` | NEAR Rust contract (near-sdk 5.30): create/accept/fund with an exact deposit, milestone transitions, per-recipient async payouts with failure recovery. Testnet only, not yet deployed. Trust decisions: [docs/adr/0001-escrow-contract.md](docs/adr/0001-escrow-contract.md). WASM build and real-node sandbox tests: [contracts/escrow/SANDBOX.md](contracts/escrow/SANDBOX.md). |
+| `contracts/escrow` | NEAR Rust contract (near-sdk 5.30): create/accept/fund with an exact deposit, milestone transitions, per-recipient async payouts with failure recovery. Deployed to testnet (see Status above). Trust decisions: [docs/adr/0001-escrow-contract.md](docs/adr/0001-escrow-contract.md). WASM build and real-node sandbox tests: [contracts/escrow/SANDBOX.md](contracts/escrow/SANDBOX.md). |
 | `apps/api` | Fastify API and Postgres persistence (PGlite for tests and demos). NEP-413 login for humans and agents; job actions through the domain state machine, returning the contract call to sign; chain sync for funding and payouts; verification queue plus a separate worker process. Design: [docs/adr/0003-api-web-agent.md](docs/adr/0003-api-web-agent.md). |
-| `apps/web` | Vite + React web app with NEAR Wallet Selector (MyNearWallet): create, accept, fund, submit, verify, evidence, review, revise, dispute, settle, resolve, pay out. Served by the API. |
+| `apps/web` | Vite + React web app with NEAR Wallet Selector (Meteor, MyNearWallet): public homepage, bounty marketplace, Swarm, agreements, and every step of an agreement. Deployed on Vercel (settlenear.xyz) and also served by the API. |
 | `apps/fixture-api` | Controlled demo API: `/broken/health` fails the demo plan, `/fixed/health` passes it. |
 | `packages/agent-sdk` | TypeScript SDK for AI agents: NEP-413 login and contract calls with the agent's own key (near-api-js 7), the same API routes as the web app; webhook registration and signature verification. `src/demo-worker.ts` runs the FAIL → PASS flow. |
 | `apps/swarm`, `packages/near-ai` | Swarm-for-Hire ([ADR 0006](docs/adr/0006-swarm-for-hire.md)). The runner holds swarm agents' keys, encrypted, and runs them on NEAR AI Cloud. The NEAR AI client verifies TEE response signatures and reads back exact per-request costs. |
 | `apps/bounty-agent` | Autonomous worker agent: watches the bounty board, dry-runs each bounty's locked checks against its own deployment, and claims, delivers and is paid only for what it can pass. `node apps/bounty-agent/dist/main.js` (see the file header for settings). |
 | `packages/mcp-server` | MCP server so any MCP agent (Claude Code, Claude Desktop, Cursor, …) can hire or be hired, or claim bounties: 18 tools over the SDK, testnet only, with a per-agreement spending limit. [docs/FOR_AGENTS.md](docs/FOR_AGENTS.md). |
-| `services/verifier` | Acceptance verifier for locked plans: SSRF-guarded HTTP API checks (single or sustained, up to 2 minutes) and GitHub CI checks on a commit merged into the agreed branch ([ADR 0004](docs/adr/0004-github-and-sustained-checks.md)). Outcomes PASS/FAIL/INCONCLUSIVE/RUNNER_ERROR, evidence record committed by hash, ed25519-signed report that the contract and domain both verify. CLI: `settle-verify keygen`, `SETTLE_VERIFIER_SEED=... settle-verify run request.json`. Design: [docs/adr/0002-http-verifier.md](docs/adr/0002-http-verifier.md). |
+| `services/verifier` | Acceptance verifier for locked plans: SSRF-guarded HTTP API checks (single or sustained, up to 2 minutes), GitHub CI checks on a commit merged into the agreed branch ([ADR 0004](docs/adr/0004-github-and-sustained-checks.md)), and text or data rules on a content-addressed deliverable ([ADR 0008](docs/adr/0008-content-rules.md)). Outcomes PASS/FAIL/INCONCLUSIVE/RUNNER_ERROR, evidence record committed by hash, ed25519-signed report that the contract and domain both verify. CLI: `settle-verify keygen`, `SETTLE_VERIFIER_SEED=... settle-verify run request.json`. Design: [docs/adr/0002-http-verifier.md](docs/adr/0002-http-verifier.md). |
 
 Key rules enforced in `packages/domain`: amounts are integer yoctoNEAR strings that must sum exactly to the total; client, worker, verifier and resolver are distinct; both parties accept a specific terms hash before the client funds the exact total; terms cannot change after funding; verification reports must carry the agreed verifier's ed25519 signature and match agreement, milestone, contract-assigned submission number, commit and plan hash, and a report cannot be applied twice; `FAIL`, `INCONCLUSIVE` and `RUNNER_ERROR` never allocate funds; human-review milestones pay only on client approval, a mutually accepted settlement, or a resolver ruling bounded by the agreed protected floor; a payout can be pending only once and a failed transfer restores the claim.
 

@@ -458,8 +458,14 @@ function AgentDetail({ session, agent: a, bounties, reload }: { session: Session
             <div className="section-head">
               <h2>Instructions</h2>
             </div>
-            <p style={{ whiteSpace: "pre-wrap" }}>{a.prompt}</p>
-            <p className="sm t3" style={{ marginTop: 10 }}>{a.knowledgeChars > 0 ? `${a.knowledgeChars.toLocaleString()} characters of knowledge` : "No extra knowledge"}</p>
+            {mine ? (
+              <EditAgent agent={a} reload={reload} />
+            ) : (
+              <>
+                <p style={{ whiteSpace: "pre-wrap" }}>{a.prompt}</p>
+                <p className="sm t3" style={{ marginTop: 10 }}>{a.knowledgeChars > 0 ? `${a.knowledgeChars.toLocaleString()} characters of knowledge (private to the owner)` : "No extra knowledge"}</p>
+              </>
+            )}
           </section>
         </div>
 
@@ -504,6 +510,7 @@ function AgentDetail({ session, agent: a, bounties, reload }: { session: Session
             <ul className="sm t2" style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
               <li>Takes only written work: judged by a person, or checked by machine against agreed rules. No AI decides payment.</li>
               <li>Never starts an inference call that could exceed its per-job limit.</li>
+              <li>Writes in a plain, human voice: no em dashes, no asterisk bold, no filler.</li>
               <li>Every deliverable is stored by its SHA-256, which is what goes onchain.</li>
               <li>Testnet: the swarm runner holds this agent's key, encrypted. The owner can withdraw at any time.</li>
             </ul>
@@ -511,6 +518,79 @@ function AgentDetail({ session, agent: a, bounties, reload }: { session: Session
         </aside>
       </div>
     </>
+  );
+}
+
+/** Owner-only: change what the agent works from. Takes effect on its next pass; its account and balance stay. */
+function EditAgent({ agent: a, reload }: { agent: SwarmAgent; reload: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [prompt, setPrompt] = useState(a.prompt);
+  const [knowledge, setKnowledge] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const open = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const s = await api<{ prompt: string; knowledge: string }>("GET", `/v1/swarm/agents/${a.id}/settings`);
+      setPrompt(s.prompt);
+      setKnowledge(s.knowledge);
+      setEditing(true);
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await api("POST", `/v1/swarm/agents/${a.id}/edit`, { prompt, knowledge: knowledge ?? "" });
+      await reload();
+      setEditing(false);
+      toast({ tone: "ok", title: "Agent updated", body: "It works from the new instructions and knowledge on its next pass." });
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing)
+    return (
+      <>
+        <p style={{ whiteSpace: "pre-wrap" }}>{a.prompt}</p>
+        <p className="sm t3" style={{ marginTop: 10 }}>{a.knowledgeChars > 0 ? `${a.knowledgeChars.toLocaleString()} characters of knowledge` : "No extra knowledge"}</p>
+        <button className="btn secondary" style={{ marginTop: 14 }} disabled={busy} onClick={open}>
+          {busy ? "Loading…" : "Edit instructions and knowledge"}
+        </button>
+        {error && <p className="banner bad" style={{ marginTop: 12 }}>{error}</p>}
+      </>
+    );
+  return (
+    <div className="edit-agent">
+      <label className="field">
+        <span>Instructions</span>
+        <textarea rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={4000} />
+        <span className="hint">Who the agent is and how it writes. 10 to 4,000 characters.</span>
+      </label>
+      <label className="field">
+        <span>Knowledge</span>
+        <textarea rows={10} value={knowledge ?? ""} onChange={(e) => setKnowledge(e.target.value)} maxLength={20_000} />
+        <span className="hint">Facts it may rely on: current URLs, button names, how payment works. Keep it up to date; it writes from this. Private to you.</span>
+      </label>
+      <div className="hstack">
+        <button className="btn lime" disabled={busy || prompt.trim().length < 10} onClick={save}>
+          {busy ? "Saving…" : "Save changes"}
+        </button>
+        <button className="btn ghost" disabled={busy} onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+      </div>
+      {error && <p className="banner bad" style={{ marginTop: 12 }}>{error}</p>}
+    </div>
   );
 }
 

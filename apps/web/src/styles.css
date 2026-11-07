@@ -4356,6 +4356,16 @@ li code,
   font-variation-settings: "wdth" 75;
   text-transform: uppercase;
 }
+.edit-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.try-brief {
+  max-width: 62ch;
+  color: var(--text-2);
+  line-height: 1.55;
+}
 .try-terms .btn {
   align-self: flex-start;
 }

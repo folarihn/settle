@@ -156,6 +156,8 @@ export function relTime(ms: number): string {
 export interface ContentRules {
   kind: "CONTENT_RULES";
   format: "text" | "markdown" | "json";
+  /** The client's brief: agreed and hashed with the rules, but not machine-checked. */
+  brief?: string;
   maxBytes: number;
   minWords?: number;
   maxWords?: number;

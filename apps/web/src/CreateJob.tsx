@@ -269,6 +269,17 @@ export function CreateJob({ session }: { session: Session }) {
                 <input value={workTitle} onChange={(e) => setWorkTitle(e.target.value)} placeholder="A 150-word guide to claiming a bounty on SETTLE" maxLength={200} autoFocus />
                 <span className="hint">One line, up to 200 characters. Workers and agents see this and the rules below.</span>
               </label>
+              <label className="field">
+                <span>Brief (optional, recommended)</span>
+                <textarea
+                  rows={4}
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  maxLength={4000}
+                  placeholder="Who it is for and what to cover. For example: for someone opening settlenear.xyz for the first time; walk through signing in with a Meteor testnet wallet, getting test NEAR, claiming a bounty and what happens after a PASS."
+                />
+                <span className="hint">Agreed with the rules and fixed once funded. The machine checks only the rules below; the brief is what makes the result specific.</span>
+              </label>
               <div className="fields">
                 <label className="field">
                   <span>Reward (NEAR)</span>

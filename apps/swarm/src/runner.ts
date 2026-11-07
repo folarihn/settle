@@ -54,6 +54,7 @@ interface AgentRow {
   status: string;
   account_id: string | null;
   secret_enc: string | null;
+  updated_at: string | number;
 }
 
 const DELIVERABLE_TOKENS = 2000;
@@ -72,6 +73,35 @@ export function normalizeDeliverable(text: string, plan: ContentRulesPlan | null
   if (plan?.format !== "json") return t;
   const fenced = t.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/);
   return (fenced ? fenced[1]! : t).trim();
+}
+
+/** How every Swarm deliverable should read: like a person wrote it, not a template. */
+export const HOUSE_STYLE =
+  "Write like a thoughtful person, not a chatbot. Use plain, specific sentences and concrete details from the brief and your knowledge. " +
+  "Never use em dashes or en dashes; use commas, colons or full stops instead. Never use asterisks for bold or italics, and do not bold words. " +
+  "Use hyphens for list items. No filler openers or closers (no \"In today's world\", \"In conclusion\", \"I hope this helps\"), no hype words, and do not mention that you are an AI.";
+
+/**
+ * Mechanical clean-up after the model: removes em/en dashes used as punctuation and asterisk
+ * emphasis, which small models add even when told not to. Words are kept; only marks change.
+ */
+export function applyHouseStyle(text: string, format: "text" | "markdown" | "json" | null): string {
+  if (format === "json") return text;
+  return text
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^(\s*)\*(\s+)/, "$1-$2") // "* item" list marker -> "- item"
+        .replace(/\*\*([^*\n]+?)\*\*/g, "$1")
+        .replace(/__([^_\n]+?)__/g, "$1")
+        .replace(/(^|[^\w*])\*([^*\s][^*\n]*?)\*(?!\w)/g, "$1$2")
+        .replace(/(\d)\s*–\s*(\d)/g, "$1-$2") // number ranges keep a plain hyphen
+        .replace(/\s*[—–]\s*(?=\S)/g, (_m, off: number) => (off === 0 ? "" : ", "))
+        .replace(/\s*[—–]\s*$/g, "")
+        .replace(/ ,/g, ",")
+        .replace(/,\s*,/g, ","),
+    )
+    .join("\n");
 }
 
 /** Whether an agent may even consider a bounty. Pure: no network, no model. */
@@ -173,7 +203,8 @@ export class SwarmRunner {
     // 2. Look for one new bounty per pass.
     const { bounties } = await agent.listBounties();
     for (const b of bounties) {
-      const key = `${a.id}:${b.id}`;
+      // Keyed by the agent's last update, so an owner's edit lets it reconsider work it declined.
+      const key = `${a.id}:${a.updated_at}:${b.id}`;
       if (this.skipped.has(key)) continue;
       const reason = screenBounty(b, BigInt(a.max_bounty_yocto), this.now()) ?? (await this.triage(a, b));
       if (reason) {
@@ -223,7 +254,9 @@ export class SwarmRunner {
     const brief = t.milestones
       .map((m) => {
         const rules = contentPlanOf(m);
-        return rules ? `- ${m.title}\n  Checked automatically against: ${describeContentRules(rules).join(" ")}` : `- ${m.title}\n  Acceptance: ${String(m.rubric ?? "")}`;
+        return rules
+          ? `- ${m.title}\n${rules.brief ? `  Brief: ${rules.brief}\n` : ""}  Checked automatically against: ${describeContentRules(rules).join(" ")}`
+          : `- ${m.title}\n  Acceptance: ${String(m.rubric ?? "")}`;
       })
       .join("\n");
     const messages: ChatMessage[] = [
@@ -275,14 +308,15 @@ export class SwarmRunner {
           (a.knowledge ? `Knowledge you may rely on:\n${a.knowledge.slice(0, 20_000)}\n\n` : "") +
           (rules?.format === "json"
             ? "Output only the JSON document itself: no code fences, no commentary."
-            : rules?.format === "text"
-              ? "Write the complete deliverable as plain text. Produce only the deliverable, with no commentary."
-              : "Write the complete deliverable in Markdown. Do not add commentary about yourself or the task; produce only the deliverable."),
+            : (rules?.format === "text"
+                ? "Write the complete deliverable as plain text. Produce only the deliverable, with no commentary."
+                : "Write the complete deliverable in Markdown. Do not add commentary about yourself or the task; produce only the deliverable.") +
+              `\n\n${HOUSE_STYLE}`),
       },
       {
         role: "user",
         content: rules
-          ? `Task: ${terms.title}\n\nA machine checks the delivery; every rule must hold or it is not paid:\n- ${describeContentRules(rules).join("\n- ")}${revision}`
+          ? `Task: ${terms.title}\n\n${rules.brief ? `Brief from the client:\n${rules.brief}\n\n` : ""}A machine checks the delivery; every rule must hold or it is not paid:\n- ${describeContentRules(rules).join("\n- ")}${revision}`
           : `Task: ${terms.title}\n\nAcceptance criteria (the client judges against these):\n${String(terms.rubric ?? "")}${revision}`,
       },
     ];
@@ -300,7 +334,7 @@ export class SwarmRunner {
       this.d.log("empty answer; will retry", { agent: a.name, bounty: job.id });
       return;
     }
-    let text = normalizeDeliverable(c.content, rules);
+    let text = applyHouseStyle(normalizeDeliverable(c.content, rules), rules?.format ?? null);
 
     // Auto-checked work: check it with the verifier's own rules first, and fix it once if needed.
     // A delivery that fails its own check is never submitted.
@@ -319,7 +353,7 @@ export class SwarmRunner {
         }
         const c2 = await this.d.ai.chat(retry, { maxTokens: DELIVERABLE_TOKENS, temperature: 0.2, reasoning: "short" });
         await recordInference(this.d.db, c2, "deliverable", { agentId: a.id, jobId: job.id, milestoneId }, this.now());
-        text = normalizeDeliverable(c2.content, rules);
+        text = applyHouseStyle(normalizeDeliverable(c2.content, rules), rules?.format ?? null);
         failed = checkContent(rules, text).filter((x) => !x.ok);
         if (failed.length) {
           this.d.log("not submitting: self-check still fails", { agent: a.name, bounty: job.id, failed: failed.map((x) => x.check) });

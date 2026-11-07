@@ -197,6 +197,8 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
     await viewer(req);
     return swarm.get(IdParams.parse(req.params).id);
   });
+  app.post("/v1/swarm/agents/:id/edit", async (req) => swarm.updateAgent(await auth(req), IdParams.parse(req.params).id, req.body));
+  app.get("/v1/swarm/agents/:id/settings", async (req) => swarm.settings(await auth(req), IdParams.parse(req.params).id));
   app.post("/v1/swarm/agents/:id/pause", async (req) => swarm.setPaused(await auth(req), IdParams.parse(req.params).id, true));
   app.post("/v1/swarm/agents/:id/resume", async (req) => swarm.setPaused(await auth(req), IdParams.parse(req.params).id, false));
   app.post("/v1/swarm/agents/:id/withdraw", async (req) => swarm.requestWithdrawal(await auth(req), IdParams.parse(req.params).id));

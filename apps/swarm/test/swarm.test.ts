@@ -9,7 +9,7 @@ import { computeOnchainTermsHash } from "@settle/domain";
 import { configFromEnv, ReviewWorker } from "@settle/api";
 import type { ChatMessage, Completion, SignatureRecord } from "@settle/near-ai";
 import { as, login, onchainFunded, startHarness, type Harness } from "../../api/test/harness.js";
-import { decryptSecret, encryptSecret, MIN_FUNDING_YOCTO, nanoUsdToYocto, SwarmRunner, WITHDRAW_RESERVE_YOCTO } from "../src/index.js";
+import { applyHouseStyle, decryptSecret, encryptSecret, MIN_FUNDING_YOCTO, nanoUsdToYocto, SwarmRunner, WITHDRAW_RESERVE_YOCTO } from "../src/index.js";
 
 const NEAR = 10n ** 24n;
 const OWNER = "agent-owner.testnet";
@@ -45,7 +45,7 @@ class FakeAi {
         : purpose === "review"
           ? JSON.stringify({ verdict: "meets", summary: "Covers the rubric.", points: ["Has setup steps"] })
           : text.includes("These checks failed")
-            ? `# Claim guide\n\nOpen Bounties, claim one, then approve it in your wallet. Step ${++this.n}.`
+            ? `# Claim guide\n\n**Open Bounties** — claim one, then approve it in your *wallet*. Step ${++this.n}.`
             : `# Setup guide\n\nStep ${++this.n}: run the demo.${text.includes("revision") ? "\n\nRevised as asked." : ""}`;
     const id = `chatcmpl-${this.calls.length}`;
     const req = JSON.stringify({ model: MODEL, messages });
@@ -187,6 +187,23 @@ describe("Swarm-for-Hire", () => {
     expect((await owner.get(`/v1/swarm/agents/${agent.id}`)).json().status).toBe("active");
   });
 
+  it("only the owner can read and edit an agent's instructions and knowledge", async () => {
+    const owner = as(h, await login(h, OWNER));
+    const [writer] = (await owner.get("/v1/swarm/agents")).json().agents.filter((a: { name: string }) => a.name === "Docs writer");
+    const other = as(h, await login(h, POSTER));
+    expect((await other.post(`/v1/swarm/agents/${writer.id}/edit`, { knowledge: "hijacked" })).statusCode).toBe(404);
+    expect((await other.get(`/v1/swarm/agents/${writer.id}/settings`)).statusCode).toBe(404);
+    expect((await owner.post(`/v1/swarm/agents/${writer.id}/edit`, {})).statusCode).toBe(400);
+    expect((await owner.post(`/v1/swarm/agents/${writer.id}/edit`, { maxJobUsd: "5" })).statusCode).toBe(400);
+
+    const knowledge = "SETTLE runs on NEAR testnet. The site is settlenear.xyz.";
+    const edited = await owner.post(`/v1/swarm/agents/${writer.id}/edit`, { knowledge });
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json()).toMatchObject({ status: "active", account: writer.account, knowledgeChars: knowledge.length, prompt: writer.prompt });
+    expect((await owner.get(`/v1/swarm/agents/${writer.id}/settings`)).json()).toEqual({ prompt: writer.prompt, knowledge });
+    expect(JSON.stringify((await other.get(`/v1/swarm/agents/${writer.id}`)).json())).not.toContain("settlenear.xyz"); // knowledge stays private
+  });
+
   it("claims only writing work it accepts, writes it with NEAR AI, and submits a content-addressed deliverable", async () => {
     const poster = await sdk(POSTER);
     const good = (await poster.postBounty(humanBounty("Write a setup guide", "A new user can run the demo.", NEAR / 100n))).job.id;
@@ -251,7 +268,7 @@ describe("Swarm-for-Hire", () => {
       fundingDeadline: Date.now() + 3_600_000,
       expiresAt: Date.now() + 86_400_000,
     });
-    const rules = { kind: "CONTENT_RULES", version: 1, format: "markdown", maxBytes: 2000, minWords: 5, mustInclude: ["wallet"], minHeadings: 1 };
+    const rules = { kind: "CONTENT_RULES", version: 1, format: "markdown", brief: "For first-time testers on settlenear.xyz.", maxBytes: 2000, minWords: 5, mustInclude: ["wallet"], minHeadings: 1 };
     const id = (await poster.postBounty(auto("Write a claim guide", rules))).job.id;
     const api = (await poster.postBounty(auto("Deploy a health API", { kind: "HTTP_API", version: 1, method: "GET", path: "/health", expectedStatus: 200, assertions: [], timeoutMs: 5000, maxResponseBytes: 1000 }))).job.id;
 
@@ -264,10 +281,16 @@ describe("Swarm-for-Hire", () => {
     expect(fix.messages.at(-1)!.content).toContain('includes "wallet"');
     const asked = ai.calls.find((c) => c.purpose === "deliverable" && c.messages[1]!.content.includes("Write a claim guide"))!;
     expect(asked.messages[1]!.content).toContain('Must include the phrase "wallet".');
+    expect(asked.messages[1]!.content).toContain("Brief from the client:\nFor first-time testers on settlenear.xyz.");
+    expect(asked.messages[0]!.content).toContain("Never use em dashes");
 
     const { job } = await poster.getJob(id);
     expect(job.state.milestones[0]!.status).toBe("SUBMITTED");
     expect(events.some(([e, f]) => e === "verification requested" && f.bounty === id)).toBe(true);
+    // The model added an em dash and asterisk emphasis; the stored deliverable has neither.
+    const stored = await (await fetch(`${apiUrl}/d/${job.state.milestones[0]!.submission!.artifactHash.slice(7)}`)).text();
+    expect(stored).toContain("Open Bounties, claim one, then approve it in your wallet.");
+    expect(stored).not.toMatch(/[—*]/);
 
     // The independent verifier reads the same bytes from the store and signs PASS.
     expect(await h.runVerifier()).toBeGreaterThanOrEqual(1);
@@ -342,6 +365,15 @@ describe("Swarm-for-Hire", () => {
 });
 
 describe("swarm units and guards", () => {
+  it("house style removes dashes and asterisk emphasis but keeps the words, lists and JSON", () => {
+    expect(applyHouseStyle("Escrow — the safe part — holds funds.", "markdown")).toBe("Escrow, the safe part, holds funds.");
+    expect(applyHouseStyle("**Fund** it, then *wait*.\n* step one\n- step two", "markdown")).toBe("Fund it, then wait.\n- step one\n- step two");
+    expect(applyHouseStyle("Write 60–200 words.", "text")).toBe("Write 60-200 words.");
+    expect(applyHouseStyle("Done —", "text")).toBe("Done");
+    expect(applyHouseStyle('{"a":"x — y"}', "json")).toBe('{"a":"x — y"}');
+    expect(applyHouseStyle("2 * 3 * 4", "text")).toBe("2 * 3 * 4");
+  });
+
   it("converts an inference bill to NEAR exactly, rounding up", () => {
     expect(nanoUsdToYocto(1_000_000_000, "2.5")).toBe(4n * 10n ** 23n); // $1 at $2.5 = 0.4 NEAR
     expect(nanoUsdToYocto(1, "3")).toBe(333333333333334n); // never rounds a bill down

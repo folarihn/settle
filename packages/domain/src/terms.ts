@@ -86,6 +86,11 @@ const ContentRulesFields = z
     kind: z.literal("CONTENT_RULES"),
     version: z.literal(1),
     format: z.enum(["text", "markdown", "json"]),
+    /**
+     * What the client wants, in their words: audience, what to cover, tone. Agreed and hashed with
+     * the rules so it cannot change after funding, but never machine-checked: only the rules decide PASS.
+     */
+    brief: z.string().trim().min(1).max(4000).optional(),
     maxBytes: z.number().int().min(1).max(65_536),
     minWords: z.number().int().min(1).max(20_000).optional(),
     maxWords: z.number().int().min(1).max(20_000).optional(),

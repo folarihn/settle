@@ -182,8 +182,12 @@ export function describeRules(r: ContentRules): string[] {
   else if (r.minWords !== undefined) out.push(`At least ${r.minWords} words.`);
   else if (r.maxWords !== undefined) out.push(`At most ${r.maxWords} words.`);
   if (r.minHeadings !== undefined) out.push(`At least ${r.minHeadings} heading${r.minHeadings === 1 ? "" : "s"}.`);
-  for (const p of r.mustInclude ?? []) out.push(`Includes "${p}".`);
-  for (const p of r.mustNotInclude ?? []) out.push(`Does not include "${p}".`);
+  // Phrase lists read as one line each, so a long list does not bury the other rules.
+  const list = (ps: string[]) => ps.map((p) => `"${p}"`).join(", ");
+  const inc = r.mustInclude ?? [];
+  const exc = r.mustNotInclude ?? [];
+  if (inc.length) out.push(inc.length === 1 ? `Includes ${list(inc)}.` : `Includes each of ${list(inc)}.`);
+  if (exc.length) out.push(exc.length === 1 ? `Does not include ${list(exc)}.` : `Contains none of ${list(exc)}.`);
   for (const a of r.assertions ?? []) out.push(a.op === "exists" ? `JSON has ${a.path}.` : a.op === "type" ? `JSON ${a.path} is ${a.type}.` : `JSON ${a.path} equals ${JSON.stringify(a.value)}.`);
   return out;
 }

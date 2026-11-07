@@ -73,7 +73,48 @@ export const GithubChecksPlan = z
   .strict();
 export type GithubChecksPlan = z.infer<typeof GithubChecksPlan>;
 
-export const VerificationPlan = z.discriminatedUnion("kind", [HttpVerificationPlan, GithubChecksPlan]);
+const Phrase = z.string().trim().min(1).max(200);
+
+/**
+ * Written or data work checked against rules fixed before funding (ADR 0008). The submission's
+ * artifact hash is the SHA-256 of the deliverable's bytes; the verifier checks the bytes it
+ * reads match that hash, then applies every rule. No code is executed and no judgement is made:
+ * each rule is mechanical, so a PASS can release payment like any other automated check.
+ */
+const ContentRulesFields = z
+  .object({
+    kind: z.literal("CONTENT_RULES"),
+    version: z.literal(1),
+    format: z.enum(["text", "markdown", "json"]),
+    maxBytes: z.number().int().min(1).max(65_536),
+    minWords: z.number().int().min(1).max(20_000).optional(),
+    maxWords: z.number().int().min(1).max(20_000).optional(),
+    /** Each phrase must appear (case-insensitive). */
+    mustInclude: z.array(Phrase).max(20).optional(),
+    /** None of these may appear (case-insensitive). */
+    mustNotInclude: z.array(Phrase).max(20).optional(),
+    /** Markdown: at least this many headings (#, ##, ...). */
+    minHeadings: z.number().int().min(1).max(50).optional(),
+    /** JSON: checks on the parsed document, same language as API checks. */
+    assertions: z.array(JsonAssertion).max(50).optional(),
+  })
+  .strict();
+
+/** Rules that need more than one field to judge; applied wherever a content plan is parsed. */
+function contentRulesConsistent(p: z.infer<typeof ContentRulesFields>, ctx: z.RefinementCtx) {
+  if (p.minWords !== undefined && p.maxWords !== undefined && p.minWords > p.maxWords) ctx.addIssue({ code: "custom", path: ["minWords"], message: "minWords cannot exceed maxWords" });
+  if (p.format !== "json" && p.assertions?.length) ctx.addIssue({ code: "custom", path: ["assertions"], message: "JSON assertions need format json" });
+  if (p.format !== "markdown" && p.minHeadings !== undefined) ctx.addIssue({ code: "custom", path: ["minHeadings"], message: "minHeadings needs format markdown" });
+}
+
+export const ContentRulesPlan = ContentRulesFields.superRefine(contentRulesConsistent);
+export type ContentRulesPlan = z.infer<typeof ContentRulesFields>;
+
+export const VerificationPlan = z
+  .discriminatedUnion("kind", [HttpVerificationPlan, GithubChecksPlan, ContentRulesFields])
+  .superRefine((p, ctx) => {
+    if (p.kind === "CONTENT_RULES") contentRulesConsistent(p, ctx);
+  });
 export type VerificationPlan = z.infer<typeof VerificationPlan>;
 
 const MilestoneId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "milestone id must be a lowercase slug");

@@ -124,6 +124,7 @@ All checks are fixed in the agreement before funding, and bound to it by hash. T
 | `api_check` | The base URL of the deployed API | One HTTP request gets the agreed status, and every JSON check holds. |
 | `api_check` with `sustained` | The base URL | The same check passes on every probe, for example 5 probes 15 s apart. The whole run takes at most 2 minutes. |
 | `github_ci` | The full commit SHA | The commit is already on the agreed branch, and every named check run or commit status of that commit concluded `success`. |
+| `CONTENT_RULES` (auto-checked text) | `sha256:<hex>` of the deliverable's bytes, plus its link (store it first with `POST /v1/deliverables`) | The bytes match the hash and every agreed rule holds: format (text, Markdown or valid JSON), size, word range, required and forbidden phrases, Markdown headings, JSON checks. See [ADR 0008](adr/0008-content-rules.md). |
 
 The branch requirement matters. A pull request's CI runs the PR's own workflow files, so an unmerged commit could change the checks that judge it. Requiring the commit to be on the branch means the client's own merge rules decide.
 

@@ -4237,3 +4237,80 @@ li code,
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Auto-checked text: rules and the worker's delivery box */
+.rule-list {
+  margin: 0;
+  padding-left: 18px;
+  list-style: square;
+  display: grid;
+  gap: 4px;
+}
+.rule-list li::marker {
+  color: var(--accent);
+}
+.deliver-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+.deliver-box textarea {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.deliver-box .btn {
+  align-self: flex-start;
+}
+
+/* Home: what you can use it for (a ruled ledger, not cards) */
+.uses {
+  padding-bottom: 24px;
+}
+.uses-table {
+  border-top: 2px solid var(--text);
+}
+.uses-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1.1fr);
+  gap: 24px;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--line-2);
+  font-size: 15px;
+  color: var(--text-2);
+  transition: background 0.15s;
+}
+.uses-row:not(.head):hover {
+  background: var(--hover);
+}
+.uses-row.head {
+  padding: 10px 4px;
+  font: 500 10.5px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.uses-what {
+  color: var(--text);
+  font-weight: 600;
+}
+.uses-what i {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--s-red);
+  margin-right: 8px;
+}
+.uses-example {
+  font: 13px var(--mono);
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .uses-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .uses-row.head {
+    display: none;
+  }
+}

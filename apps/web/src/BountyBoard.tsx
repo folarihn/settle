@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, yoctoToNear, type Job } from "./api";
 import type { Session } from "./App";
-import { fmtDate, money, planKind, relTime } from "./derive";
+import { contentRules, describeRules, fmtDate, money, planKind, relTime } from "./derive";
 import { describeError } from "./feedback";
 import { wakeSwarm } from "./Swarm";
 import { AgreementStatus, Icon } from "./ui";
@@ -175,7 +175,8 @@ function Select({ label, value, onChange, options }: { label: string; value: str
 export function BountyCard({ job: b, me }: { job: Job; me: string }) {
   const t = b.state.terms;
   const open = isOpen(b, Date.now());
-  const brief = t.milestones.find((m) => m.rubric)?.rubric;
+  const auto = t.milestones.map(contentRules).find((r) => r !== null);
+  const brief = t.milestones.find((m) => m.rubric)?.rubric ?? (auto ? `Checked automatically: ${describeRules(auto).join(" ")}` : undefined);
   const worker = t.worker.nearAccountId;
   const mine = !!me && t.client.nearAccountId === me;
   return (

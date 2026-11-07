@@ -44,7 +44,9 @@ class FakeAi {
         ? JSON.stringify(this.declineIf.test(text) ? { take: false, reason: "outside my skills" } : { take: true, reason: "fits" })
         : purpose === "review"
           ? JSON.stringify({ verdict: "meets", summary: "Covers the rubric.", points: ["Has setup steps"] })
-          : `# Setup guide\n\nStep ${++this.n}: run the demo.${text.includes("revision") ? "\n\nRevised as asked." : ""}`;
+          : text.includes("These checks failed")
+            ? `# Claim guide\n\nOpen Bounties, claim one, then approve it in your wallet. Step ${++this.n}.`
+            : `# Setup guide\n\nStep ${++this.n}: run the demo.${text.includes("revision") ? "\n\nRevised as asked." : ""}`;
     const id = `chatcmpl-${this.calls.length}`;
     const req = JSON.stringify({ model: MODEL, messages });
     const res = JSON.stringify({ id, choices: [{ message: { content } }] });
@@ -237,6 +239,40 @@ describe("Swarm-for-Hire", () => {
     const { job } = await poster.getJob(id);
     expect(job.state.milestones[0]).toMatchObject({ status: "SUBMITTED", submission: { seq: 2 } });
     expect(ai.calls.at(-1)!.messages[1]!.content).toContain("Add a troubleshooting section.");
+  });
+
+  it("takes auto-checked written work, fixes a draft that fails its own check, and is verified by machine", async () => {
+    const poster = await sdk(POSTER);
+    const near = NEAR / 100n;
+    const auto = (title: string, plan: Record<string, unknown>) => ({
+      totalYocto: near.toString(),
+      milestones: [{ id: "doc", title, type: "AUTOMATED", amountYocto: near.toString(), verificationPlan: plan }],
+      challengePeriodSec: 60,
+      fundingDeadline: Date.now() + 3_600_000,
+      expiresAt: Date.now() + 86_400_000,
+    });
+    const rules = { kind: "CONTENT_RULES", version: 1, format: "markdown", maxBytes: 2000, minWords: 5, mustInclude: ["wallet"], minHeadings: 1 };
+    const id = (await poster.postBounty(auto("Write a claim guide", rules))).job.id;
+    const api = (await poster.postBounty(auto("Deploy a health API", { kind: "HTTP_API", version: 1, method: "GET", path: "/health", expectedStatus: 200, assertions: [], timeoutMs: 5000, maxResponseBytes: 1000 }))).job.id;
+
+    await runner.tick();
+    await runner.tick();
+    expect(events.find(([e, f]) => e === "skipped" && f.bounty === api)?.[1].reason).toBe("has milestones that need a deployment or code, not writing");
+
+    // The first draft lacked "wallet"; the agent saw that with the verifier's own rules and fixed it.
+    const fix = ai.calls.find((c) => c.messages.some((m) => m.content.includes("These checks failed")))!;
+    expect(fix.messages.at(-1)!.content).toContain('includes "wallet"');
+    const asked = ai.calls.find((c) => c.purpose === "deliverable" && c.messages[1]!.content.includes("Write a claim guide"))!;
+    expect(asked.messages[1]!.content).toContain('Must include the phrase "wallet".');
+
+    const { job } = await poster.getJob(id);
+    expect(job.state.milestones[0]!.status).toBe("SUBMITTED");
+    expect(events.some(([e, f]) => e === "verification requested" && f.bounty === id)).toBe(true);
+
+    // The independent verifier reads the same bytes from the store and signs PASS.
+    expect(await h.runVerifier()).toBeGreaterThanOrEqual(1);
+    const after = (await poster.getJob(id)).job.state.milestones[0]!;
+    expect(after.status).toBe("VERIFIED_PENDING_CHALLENGE");
   });
 
   it("never starts a call that could exceed the agent's per-job inference limit", async () => {

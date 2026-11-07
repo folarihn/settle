@@ -123,7 +123,11 @@ export class VerificationService {
   async process(row: Row, opts: VerifyOptions): Promise<void> {
     let signed;
     try {
-      signed = await verifySubmission(row.request, opts);
+      // Content plans read the deliverable from SETTLE's own content-addressed store when it is
+      // there: the hash is the key, so the bytes are exactly what was submitted onchain.
+      const loadContent = async (hash: string) =>
+        (await this.db.query<{ content: string }>("SELECT content FROM deliverables WHERE hash = $1", [hash])).rows[0]?.content ?? null;
+      signed = await verifySubmission(row.request, { loadContent, ...opts });
     } catch (e) {
       await this.db.query("UPDATE verifications SET status = 'FAILED', error = $1, updated_at = $2 WHERE id = $3", [
         e instanceof Error ? e.message : String(e),

@@ -41,7 +41,7 @@ export function Home({ config, account, signedIn }: { config: PublicConfig | nul
             <span className="outline">Proof gets checked.</span>
             <span className="lime-text">Money moves.</span>
           </h1>
-          <p className="hero-lede">Create agreements, lock payments in escrow, verify delivery and settle fairly. Built for people and AI agents.</p>
+          <p className="hero-lede">Pay for code, APIs, designs and writing only when the work checks out. The money waits in escrow on NEAR until the agreed check passes. For people and AI agents.</p>
           <div className="hero-cta">
             <a className="btn lime lg" href="#/new">
               Create an agreement
@@ -59,6 +59,7 @@ export function Home({ config, account, signedIn }: { config: PublicConfig | nul
         <EscrowMachine />
       </section>
 
+      <Uses />
       <Proof config={config} />
       <HowItWorks />
       <TwoPaths />
@@ -394,6 +395,43 @@ function MarketPreview({ signedIn }: { signedIn: boolean }) {
         </div>
       )}
       {!open.length && shown.length > 0 && <p className="muted">No bounty is open at this moment; these are recent ones from the public record.</p>}
+    </section>
+  );
+}
+
+const USES = [
+  { what: "An API or backend", check: "The verifier calls your live endpoint and checks the response.", example: "A /health endpoint that returns {\"status\":\"ok\"}" },
+  { what: "A fix or feature in your repo", check: "Your GitHub CI checks must pass on the merged commit.", example: "Fix the failing test on main" },
+  { what: "A service that stays up", check: "Repeated health checks over a set time; every one must pass.", example: "An API that stays healthy for 5 checks, 15 s apart" },
+  { what: "Text or data with clear rules", check: "Checked by machine: word count, required phrases, valid JSON.", example: "A 150-word guide that mentions wallet and testnet" },
+  { what: "Design or writing you judge", check: "You approve it, or ask for an agreed number of revisions.", example: "A logo as SVG; a README for your project" },
+  { what: "Any of the above, by an AI agent", check: "The same checks; agents claim open bounties through the Swarm.", example: "Post a bounty; a Swarm agent writes and submits it" },
+];
+
+/** What people can actually make agreements for, and how each kind of work is verified. */
+function Uses() {
+  return (
+    <section className="uses light">
+      <div className="section-intro">
+        <span className="kicker">What you can use it for</span>
+        <h2>Any work you can check, paid when it checks out.</h2>
+      </div>
+      <div className="uses-table" role="table" aria-label="Kinds of agreements">
+        <div className="uses-row head" role="row">
+          <span role="columnheader">You want</span>
+          <span role="columnheader">How it is verified</span>
+          <span role="columnheader">Example</span>
+        </div>
+        {USES.map((u, i) => (
+          <div className="uses-row" role="row" key={u.what}>
+            <span role="cell" className="uses-what">
+              <i className="mono">{String(i + 1).padStart(2, "0")}</i> {u.what}
+            </span>
+            <span role="cell">{u.check}</span>
+            <span role="cell" className="uses-example">{u.example}</span>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

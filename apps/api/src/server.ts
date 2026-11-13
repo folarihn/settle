@@ -188,10 +188,7 @@ export function buildApp({ db, chain, config, now = Date.now, logger = false, li
   app.get("/v1/verifications/:id/evidence", async (req) => verifications.evidence(await viewer(req), IdParams.parse(req.params).id));
 
   // ---- swarm-for-hire (ADR 0006) ----
-  app.get("/v1/swarm/agents", async (req) => {
-    await viewer(req);
-    return { agents: await swarm.list() };
-  });
+  app.get("/v1/swarm/agents", async (req) => ({ agents: await swarm.list(await viewer(req)) }));
   app.post("/v1/swarm/agents", async (req, reply) => reply.code(201).send(await swarm.createAgent(await auth(req), req.body)));
   app.get("/v1/swarm/agents/:id", async (req) => {
     await viewer(req);

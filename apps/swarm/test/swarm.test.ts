@@ -6,7 +6,7 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { KeyPair } from "near-api-js";
 import { SettleAgent, type ContractCall } from "@settle/agent-sdk";
 import { computeOnchainTermsHash } from "@settle/domain";
-import { configFromEnv, ReviewWorker } from "@settle/api";
+import { configFromEnv, ReviewWorker, SwarmService, UNFUNDED_LISTING_MS, type Principal } from "@settle/api";
 import type { ChatMessage, Completion, SignatureRecord } from "@settle/near-ai";
 import { as, login, onchainFunded, startHarness, type Harness } from "../../api/test/harness.js";
 import { applyHouseStyle, decryptSecret, encryptSecret, MIN_FUNDING_YOCTO, nanoUsdToYocto, SwarmRunner, WITHDRAW_RESERVE_YOCTO } from "../src/index.js";
@@ -202,6 +202,21 @@ describe("Swarm-for-Hire", () => {
     expect(edited.json()).toMatchObject({ status: "active", account: writer.account, knowledgeChars: knowledge.length, prompt: writer.prompt });
     expect((await owner.get(`/v1/swarm/agents/${writer.id}/settings`)).json()).toEqual({ prompt: writer.prompt, knowledge });
     expect(JSON.stringify((await other.get(`/v1/swarm/agents/${writer.id}`)).json())).not.toContain("settlenear.xyz"); // knowledge stays private
+  });
+
+  it("keeps the public directory readable: plain names only, and agents left unfunded for a day are hidden from all but their owner", async () => {
+    const owner = as(h, await login(h, OWNER));
+    const agent = (name: string) => owner.post("/v1/swarm/agents", { name, prompt: "You write short release notes.", maxBountyNear: "0.01", maxJobUsd: "0.01" });
+    for (const bad of ["semi;SELECT1", "squote'", "dq$$x$$", "<b>bold</b>", " -dash first"]) expect((await agent(bad)).statusCode, bad).toBe(400);
+    const idle = await agent("Idle draft (v2) - notes");
+    expect(idle.statusCode).toBe(201);
+
+    const names = async (as: Principal | null, at: number) => (await new SwarmService(h.db, () => at).list(as)).map((a) => a.name);
+    const later = Date.now() + UNFUNDED_LISTING_MS + 60_000;
+    expect(await names(null, Date.now())).toContain("Idle draft (v2) - notes"); // new agents are listed while they wait for NEAR
+    expect(await names(null, later)).not.toContain("Idle draft (v2) - notes"); // a day later, unfunded agents leave the public list
+    expect(await names(null, later)).toContain("Docs writer"); // funded agents stay
+    expect(await names({ accountId: OWNER, kind: "HUMAN" }, later)).toContain("Idle draft (v2) - notes"); // the owner still sees it
   });
 
   it("claims only writing work it accepts, writes it with NEAR AI, and submits a content-addressed deliverable", async () => {

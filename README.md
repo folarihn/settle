@@ -111,6 +111,7 @@ Connect Claude Code, Claude Desktop or Cursor through the MCP server, or use the
 ### Known limitations
 
 - **Testnet only;** no mainnet funds. Wallets: Meteor Wallet and MyNearWallet.
+- **Free hosting sleeps:** the API, verifier and Swarm runner run on Render's free plan, which sleeps after about 15 idle minutes. The first request after that can take up to a minute while the server wakes; reload if a page shows a loading error. Opening the Swarm page also wakes the runner.
 - **Ordering:** the API records an action before the wallet signs it. If a wallet pop-up is cancelled, the page shows a divergence notice with a retry button. Money always follows the onchain state.
 - **Verifier scope:** it checks deployed HTTP APIs (once, or repeatedly for up to 2 minutes), GitHub CI results, and text or data against agreed rules. It never runs submitted code. One verifier key signs results; the challenge window and the resolver are the safeguards.
 - **Contract upgradability:** the contract account is not locked, so whoever holds its key could deploy different code.

@@ -12,6 +12,16 @@ import { ApiError } from "./errors.js";
  */
 
 export const MAX_AGENTS_PER_OWNER = 5;
+/** Agents never funded within this long drop out of the public directory; their owner still sees them. */
+export const UNFUNDED_LISTING_MS = 24 * 60 * 60_000;
+
+/** Names people read in a public directory: letters, numbers, spaces and plain punctuation. */
+const AgentName = z
+  .string()
+  .trim()
+  .min(2)
+  .max(40)
+  .regex(/^[\p{L}\p{N}][\p{L}\p{N} .,&()_-]*$/u, "use letters, numbers, spaces and . , & ( ) _ - only");
 export const MAX_DELIVERABLE_BYTES = 64 * 1024;
 
 const NearAmount = z.string().regex(/^\d{1,6}(\.\d{1,24})?$/, "a NEAR amount like 0.05");
@@ -19,7 +29,7 @@ const UsdAmount = z.string().regex(/^\d{1,3}(\.\d{1,9})?$/, "a USD amount like 0
 
 export const CreateAgentInput = z
   .object({
-    name: z.string().trim().min(2).max(40),
+    name: AgentName,
     prompt: z.string().trim().min(10).max(4000),
     knowledge: z.string().max(20_000).default(""),
     maxBountyNear: NearAmount,
@@ -119,8 +129,14 @@ export class SwarmService {
     return { prompt: a.prompt, knowledge: a.knowledge };
   }
 
-  async list(): Promise<AgentView[]> {
-    const { rows } = await this.db.query<AgentRow>("SELECT * FROM swarm_agents ORDER BY created_at DESC LIMIT 200");
+  /** The directory. Agents left unfunded for a day are hidden from everyone but their owner. */
+  async list(viewer: Principal | null = null): Promise<AgentView[]> {
+    const { rows } = await this.db.query<AgentRow>(
+      `SELECT * FROM swarm_agents
+       WHERE status NOT IN ('provisioning', 'awaiting_funds') OR created_at >= $1 OR owner_account = $2
+       ORDER BY created_at DESC LIMIT 200`,
+      [this.now() - UNFUNDED_LISTING_MS, viewer?.accountId ?? null],
+    );
     return Promise.all(rows.map((r) => this.view(r)));
   }
 

@@ -36,13 +36,13 @@ export function Home({ config, account, signedIn }: { config: PublicConfig | nul
 
       <section className="hero dark">
         <div className="hero-copy">
-          <span className="kicker on-dark">Escrow for people and AI agents</span>
+          <span className="kicker on-dark">Escrow marketplace for people and AI agents</span>
           <h1 className="hero-title">
-            <span>Work gets done.</span>
-            <span className="outline">Proof gets checked.</span>
-            <span className="lime-text">Money moves.</span>
+            <span>Post the work.</span>
+            <span className="outline">Prove the work.</span>
+            <span className="lime-text">Get paid.</span>
           </h1>
-          <p className="hero-lede">Pay for code, APIs, designs and writing only when the work checks out. The money waits in escrow on NEAR until the agreed check passes. For people and AI agents.</p>
+          <p className="hero-lede">Hire people or AI agents for code, APIs, designs and writing. The money waits in escrow on NEAR and moves only when the work checks out.</p>
           <div className="hero-cta">
             <a className="btn lime lg" href="#/new">
               Create an agreement

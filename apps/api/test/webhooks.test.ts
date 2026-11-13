@@ -43,6 +43,10 @@ afterAll(async () => {
   await h.close();
 });
 
+/** The delivery for one job. Other test files may share the database and the client account, so a webhook can also hold their jobs' deliveries. */
+interface Delivery { jobId: string; attempts: number; deliveredAt: number | null; lastStatus: number | null; lastError: string | null }
+const deliveryFor = (deliveries: Delivery[], jobId: string): Delivery | undefined => deliveries.find((d) => d.jobId === jobId);
+
 describe("webhooks", () => {
   it("rejects URLs the worker must never call", async () => {
     const client = as(h, await login(h, CLIENT));
@@ -66,12 +70,15 @@ describe("webhooks", () => {
     await worker.post(`/v1/jobs/${job.id}/actions`, { type: "ACCEPT_TERMS", termsHash: job.state.termsHash });
 
     const sender = new WebhookService(h.db, Date.now, h.policy);
-    expect(await sender.deliverDue()).toBe(2); // the client's acceptance at creation, then the worker's
-    expect(received.map((r) => [r.url, JSON.parse(r.body).event.type])).toEqual([
-      ["/worker", "ACCEPT_TERMS"],
-      ["/worker", "ACCEPT_TERMS"],
+    await sender.deliverDue(500);
+    // Only this job's events count: parallel test files may share the database and these accounts.
+    const mine = () => received.filter((r) => JSON.parse(r.body).jobId === job.id);
+    expect(mine().map((r) => [r.url, JSON.parse(r.body).event.type])).toEqual([
+      ["/worker", "ACCEPT_TERMS"], // the client's acceptance at creation
+      ["/worker", "ACCEPT_TERMS"], // then the worker's
     ]);
-    for (const r of received) {
+    expect(received.some((r) => r.url === "/stranger" && JSON.parse(r.body).jobId === job.id)).toBe(false);
+    for (const r of mine()) {
       expect(JSON.parse(r.body).jobId).toBe(job.id);
       expect(verifyWebhookSignature(hook.secret, r.headers["settle-signature"] as string, r.body)).toBe(true);
       // Any change to the body, or a different secret, fails verification.
@@ -79,11 +86,14 @@ describe("webhooks", () => {
       expect(verifyWebhookSignature(`whsec_${"0".repeat(64)}`, r.headers["settle-signature"] as string, r.body)).toBe(false);
     }
     // A stale signature is refused, so a captured delivery cannot be replayed later.
-    expect(verifyWebhookSignature(hook.secret, received[0]!.headers["settle-signature"] as string, received[0]!.body, { now: Date.now() + 10 * 60_000 })).toBe(false);
+    const first = mine()[0]!;
+    expect(verifyWebhookSignature(hook.secret, first.headers["settle-signature"] as string, first.body, { now: Date.now() + 10 * 60_000 })).toBe(false);
 
-    const log = (await worker.get(`/v1/webhooks/${hook.id}/deliveries`)).json().deliveries;
-    expect(log.every((d: { deliveredAt: unknown; lastStatus: number }) => d.deliveredAt !== null && d.lastStatus === 200)).toBe(true);
-    expect((await sender.deliverDue())).toBe(0); // nothing is sent twice
+    const log = ((await worker.get(`/v1/webhooks/${hook.id}/deliveries`)).json().deliveries as Delivery[]).filter((d) => d.jobId === job.id);
+    expect(log).toHaveLength(2);
+    expect(log.every((d) => d.deliveredAt !== null && d.lastStatus === 200)).toBe(true);
+    await sender.deliverDue(500);
+    expect(mine()).toHaveLength(2); // nothing is sent twice
     expect((await client.get(`/v1/webhooks/${hook.id}/deliveries`)).statusCode).toBe(404); // not the client's webhook
   });
 
@@ -106,7 +116,7 @@ describe("webhooks", () => {
       await sender.deliverDue();
     }
     expect(attempts()).toBe(MAX_ATTEMPTS);
-    const [d] = (await client.get(`/v1/webhooks/${hook.id}/deliveries`)).json().deliveries;
+    const d = deliveryFor((await client.get(`/v1/webhooks/${hook.id}/deliveries`)).json().deliveries, job.id);
     expect(d).toMatchObject({ attempts: MAX_ATTEMPTS, deliveredAt: null, lastStatus: 500, lastError: "receiver answered 500" });
     expect((await client.get(`/v1/jobs/${job.id}`)).json().job.state.status).toBe("DRAFT");
 
@@ -117,11 +127,11 @@ describe("webhooks", () => {
   it("refuses to deliver to a hostname that resolves to a private address", async () => {
     const client = as(h, await login(h, CLIENT));
     const hook = (await client.post("/v1/webhooks", { url: "https://hooks.example.test/settle" })).json();
-    await client.post("/v1/jobs", jobInput());
+    const job = (await client.post("/v1/jobs", jobInput())).json();
     const sender = new WebhookService(h.db, Date.now, undefined, async () => [{ address: "10.1.2.3", family: 4 }]);
-    await sender.deliverDue();
-    const [d] = (await client.get(`/v1/webhooks/${hook.id}/deliveries`)).json().deliveries;
-    expect(d.deliveredAt).toBeNull();
-    expect(d.lastError).toContain("blocked address");
+    await sender.deliverDue(500);
+    const d = deliveryFor((await client.get(`/v1/webhooks/${hook.id}/deliveries`)).json().deliveries, job.id);
+    expect(d?.deliveredAt).toBeNull();
+    expect(d?.lastError).toContain("blocked address");
   });
 });

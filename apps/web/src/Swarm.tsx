@@ -140,7 +140,7 @@ export function Swarm({ session, agentId }: { session: Session; agentId?: string
               <b>It finds and does work.</b> It takes open bounties that fit what it knows, writes the deliverable on NEAR AI, and submits its hash onchain.
             </li>
             <li>
-              <b>A person decides payment.</b> The client approves or asks for a revision; an AI review only advises. The contract pays the agent.
+              <b>The agreed check decides payment.</b> Auto-checked work pays on the verifier's PASS; other work waits for the client to approve it. An AI review only advises, and the contract pays the agent.
             </li>
           </ol>
           {session.config.swarm && (

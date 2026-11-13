@@ -210,6 +210,15 @@ const MIGRATIONS = [
    )`,
 ];
 
+/** Arbitrary constant naming the schema lock; any process that migrates takes the same one. */
+const MIGRATION_LOCK = 7_172_211;
+
 export async function migrate(db: Db): Promise<void> {
-  for (const statement of MIGRATIONS) await db.query(statement);
+  // The API, worker, swarm runner and parallel test files can start at the same moment, and
+  // CREATE ... IF NOT EXISTS is not safe under concurrency in Postgres (two creators can collide
+  // on the catalog). One transaction-scoped advisory lock makes the schema setup run one at a time.
+  await db.tx(async (sql) => {
+    await sql.query("SELECT pg_advisory_xact_lock($1)", [MIGRATION_LOCK]);
+    for (const statement of MIGRATIONS) await sql.query(statement);
+  });
 }
